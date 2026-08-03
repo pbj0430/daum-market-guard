@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import sys
 from pathlib import Path
 
 from .commenter import process_pending_comments
@@ -13,6 +14,7 @@ from .service import run_forever, run_once
 
 
 def main(argv: list[str] | None = None) -> None:
+    argv = _normalize_global_options(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(prog="daum-market-guard")
     parser.add_argument("--config", default="config.toml", help="config TOML path")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -79,6 +81,30 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "blacklist":
         _blacklist(config, args)
         return
+
+
+def _normalize_global_options(argv: list[str]) -> list[str]:
+    """Allow global options before or after subcommands."""
+    normalized: list[str] = []
+    remaining: list[str] = []
+    index = 0
+    while index < len(argv):
+        item = argv[index]
+        if item == "--config":
+            normalized.append(item)
+            if index + 1 < len(argv):
+                normalized.append(argv[index + 1])
+                index += 2
+            else:
+                index += 1
+            continue
+        if item.startswith("--config="):
+            normalized.append(item)
+            index += 1
+            continue
+        remaining.append(item)
+        index += 1
+    return normalized + remaining
 
 
 def _init_config(path: Path) -> None:
