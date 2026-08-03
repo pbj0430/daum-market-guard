@@ -3,6 +3,8 @@ login_url = "https://accounts.kakao.com/login/"
 data_dir = "data"
 poll_interval_seconds = 300
 headless = true
+locale = "ko-KR"
+timezone_id = "Asia/Seoul"
 
 # Keep this directory outside the repo if you want to copy it between PC and Raspberry Pi.
 user_data_dir = "browser-profile"

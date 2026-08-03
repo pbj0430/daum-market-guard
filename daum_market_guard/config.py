@@ -56,6 +56,8 @@ class AppConfig:
     user_data_dir: Path = Path("browser-profile")
     poll_interval_seconds: int = 300
     headless: bool = True
+    locale: str = "ko-KR"
+    timezone_id: str = "Asia/Seoul"
     browser_executable_path: str | None = None
     max_pages_per_board: int = 1
     max_posts_per_board_page: int = 40
@@ -127,6 +129,8 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
         user_data_dir=_path(data.get("user_data_dir", "browser-profile"), base_dir),
         poll_interval_seconds=int(data.get("poll_interval_seconds", 300)),
         headless=bool(data.get("headless", True)),
+        locale=str(data.get("locale", "ko-KR")),
+        timezone_id=str(data.get("timezone_id", "Asia/Seoul")),
         browser_executable_path=_optional_str(data.get("browser_executable_path")),
         max_pages_per_board=int(data.get("max_pages_per_board", 1)),
         max_posts_per_board_page=int(data.get("max_posts_per_board_page", 40)),

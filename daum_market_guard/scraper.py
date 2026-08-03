@@ -62,10 +62,13 @@ class DaumCafeScraper:
             "headless": self.config.headless,
             "user_data_dir": str(self.config.user_data_dir),
             "viewport": {"width": 1280, "height": 900},
+            "locale": self.config.locale,
+            "timezone_id": self.config.timezone_id,
             "args": [
                 "--disable-dev-shm-usage",
                 "--no-sandbox",
                 "--disable-gpu",
+                f"--lang={self.config.locale}",
             ],
         }
         executable_path = self.config.browser_executable_path or find_system_chromium()
@@ -90,8 +93,13 @@ class DaumCafeScraper:
 
     def login_interactive(self) -> None:
         page = self.page()
-        page.goto(self.config.login_url, wait_until="domcontentloaded", timeout=60_000)
-        print("Complete Kakao/Daum login in the browser, then press Enter here.")
+        page.goto(self.config.cafe_url, wait_until="domcontentloaded", timeout=60_000)
+        page.wait_for_timeout(1000)
+        self._click_login_if_available(page)
+        print(
+            "The cafe page is open. Log in from the browser if needed, "
+            "then press Enter here."
+        )
         input()
         page.goto(self.config.cafe_url, wait_until="domcontentloaded", timeout=60_000)
         self.context.storage_state(path=str(self.config.data_dir / "storage-state.json"))
@@ -293,6 +301,26 @@ class DaumCafeScraper:
         except Exception:
             return False
         return "로그인" in text and "카카오" in text and "비밀번호" in text
+
+    def _click_login_if_available(self, page: Page) -> None:
+        candidates = [
+            "a:has-text('로그인')",
+            "button:has-text('로그인')",
+            "a[href*='login']",
+            "a[href*='accounts.kakao.com']",
+            "a[href*='logins.daum.net']",
+        ]
+        for frame in page.frames:
+            for selector in candidates:
+                try:
+                    locator = frame.locator(selector).first
+                    if locator.count() == 0:
+                        continue
+                    locator.click(timeout=2000)
+                    page.wait_for_timeout(1000)
+                    return
+                except Exception:
+                    continue
 
 
 def save_image_bytes(base_dir: Path, post_key: str, image_url: str, image_bytes: bytes) -> Path:

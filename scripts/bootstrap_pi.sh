@@ -8,6 +8,16 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
+if command -v apt-get >/dev/null 2>&1; then
+  echo "Installing Raspberry Pi browser/font packages if needed."
+  sudo apt-get update
+  sudo apt-get install -y python3-full python3-venv fonts-noto-cjk fonts-nanum fontconfig
+  if ! command -v chromium-browser >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
+    sudo apt-get install -y chromium-browser || sudo apt-get install -y chromium
+  fi
+  fc-cache -f >/dev/null 2>&1 || true
+fi
+
 if ! python3 -m venv .venv; then
   echo "Failed to create .venv." >&2
   echo "Install venv support first: sudo apt install -y python3-full python3-venv" >&2

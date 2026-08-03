@@ -27,6 +27,7 @@ Copy-Item config.example.toml config.toml
 
 64비트 Raspberry Pi OS 권장입니다. Pi 3B는 메모리가 작아서 Playwright 내장 Chromium보다 시스템 Chromium이 안정적일 수 있습니다.
 시스템에 `chromium-browser` 또는 `chromium`이 있으면 자동으로 그 실행 파일을 사용합니다.
+한글이 네모나 깨진 글자로 보이면 `fonts-noto-cjk`, `fonts-nanum`, `fontconfig` 패키지가 필요합니다. `scripts/bootstrap_pi.sh`가 이 패키지를 설치합니다.
 
 간단 설치:
 
@@ -39,7 +40,7 @@ chmod +x scripts/bootstrap_pi.sh
 
 ```bash
 sudo apt update
-sudo apt install -y python3-full python3-venv chromium-browser
+sudo apt install -y python3-full python3-venv chromium-browser fonts-noto-cjk fonts-nanum fontconfig
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
@@ -67,7 +68,7 @@ Raspberry Pi에서는 시스템 Python 대신 아래처럼 venv 실행 스크립
 ./scripts/run.sh login --config config.toml
 ```
 
-브라우저가 열리면 직접 아이디와 비밀번호를 입력하고 로그인합니다. 로그인 완료 후 터미널에서 Enter를 누르면 세션이 `browser-profile`에 저장됩니다.
+브라우저가 카페 홈으로 열리면 직접 로그인 버튼을 눌러 아이디와 비밀번호를 입력합니다. 로그인 완료 후 터미널에서 Enter를 누르면 세션이 `browser-profile`에 저장됩니다.
 
 2. 1회 수집 및 판정
 
