@@ -33,6 +33,7 @@ class Database:
                 author_name TEXT NOT NULL DEFAULT '',
                 author_id TEXT NOT NULL DEFAULT '',
                 posted_at TEXT NOT NULL DEFAULT '',
+                content_text TEXT NOT NULL DEFAULT '',
                 first_seen_at TEXT NOT NULL,
                 last_seen_at TEXT NOT NULL
             );
@@ -93,7 +94,16 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_assessments_score ON assessments(score);
             """
         )
+        self._ensure_column("posts", "content_text", "TEXT NOT NULL DEFAULT ''")
         self.conn.commit()
+
+    def _ensure_column(self, table: str, column: str, definition: str) -> None:
+        columns = {
+            str(row["name"])
+            for row in self.conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if column not in columns:
+            self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def upsert_post(self, detail: PostDetail) -> int:
         now = utc_now()
@@ -101,15 +111,16 @@ class Database:
             """
             INSERT INTO posts (
                 board_id, post_key, url, title, author_name, author_id,
-                posted_at, first_seen_at, last_seen_at
+                posted_at, content_text, first_seen_at, last_seen_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(post_key) DO UPDATE SET
                 url = excluded.url,
                 title = excluded.title,
                 author_name = excluded.author_name,
                 author_id = excluded.author_id,
                 posted_at = excluded.posted_at,
+                content_text = excluded.content_text,
                 last_seen_at = excluded.last_seen_at
             """,
             (
@@ -120,6 +131,7 @@ class Database:
                 detail.author_name,
                 detail.author_id,
                 detail.posted_at,
+                detail.content_text,
                 now,
                 now,
             ),
@@ -171,6 +183,80 @@ class Database:
             "SELECT * FROM images WHERE post_id = ? ORDER BY id", (post_id,)
         ).fetchall()
         return list(rows)
+
+    def summary(self) -> dict[str, int]:
+        values: dict[str, int] = {}
+        for key, query in {
+            "posts": "SELECT COUNT(*) FROM posts",
+            "images": "SELECT COUNT(*) FROM images",
+            "assessments": "SELECT COUNT(*) FROM assessments",
+            "suspects": "SELECT COUNT(*) FROM assessments WHERE score >= 70",
+            "blacklist": "SELECT COUNT(*) FROM blacklist WHERE active = 1",
+        }.items():
+            values[key] = int(self.conn.execute(query).fetchone()[0])
+        return values
+
+    def list_recent_posts(self, limit: int = 50) -> list[sqlite3.Row]:
+        return list(
+            self.conn.execute(
+                """
+                SELECT
+                    posts.*,
+                    COUNT(images.id) AS image_count,
+                    latest.score AS score,
+                    latest.duplicate_image_count AS duplicate_image_count,
+                    latest.duplicate_post_count AS duplicate_post_count,
+                    latest.reasons_json AS reasons_json,
+                    latest.candidate_posts_json AS candidate_posts_json,
+                    latest.created_at AS assessed_at
+                FROM posts
+                LEFT JOIN images ON images.post_id = posts.id
+                LEFT JOIN (
+                    SELECT a.*
+                    FROM assessments a
+                    JOIN (
+                        SELECT post_id, MAX(id) AS id
+                        FROM assessments
+                        GROUP BY post_id
+                    ) latest_ids ON latest_ids.id = a.id
+                ) latest ON latest.post_id = posts.id
+                GROUP BY posts.id
+                ORDER BY posts.last_seen_at DESC, posts.id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        )
+
+    def list_recent_images(self, limit: int = 24) -> list[sqlite3.Row]:
+        return list(
+            self.conn.execute(
+                """
+                SELECT images.*, posts.title, posts.author_name, posts.url AS post_url
+                FROM images
+                JOIN posts ON posts.id = images.post_id
+                ORDER BY images.id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        )
+
+    def list_images_for_posts(self, post_ids: list[int]) -> list[sqlite3.Row]:
+        if not post_ids:
+            return []
+        placeholders = ",".join("?" for _ in post_ids)
+        return list(
+            self.conn.execute(
+                f"""
+                SELECT *
+                FROM images
+                WHERE post_id IN ({placeholders})
+                ORDER BY post_id, id
+                """,
+                tuple(post_ids),
+            ).fetchall()
+        )
 
     def iter_prior_images(self, post_id: int) -> Iterable[StoredImage]:
         rows = self.conn.execute(

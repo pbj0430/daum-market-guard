@@ -82,6 +82,22 @@ Raspberry Pi:
 ./scripts/run.sh scan --config config.toml
 ```
 
+스캔 중에는 현재 처리 중인 게시판, 글 제목, 작성자, 저장된 이미지 수, 판정 점수가 터미널에 출력됩니다.
+
+2-1. VNC용 GUI
+
+```bash
+./scripts/gui.sh
+```
+
+VNC의 Chromium에서 아래 주소를 엽니다.
+
+```text
+http://127.0.0.1:8080
+```
+
+GUI에서 `Scan` 버튼을 누르면 진행 로그가 표시되고, DB에 저장된 최근 글, 작성자, 본문 일부, 위험 점수, 중복 근거 링크, 이미지 썸네일을 확인할 수 있습니다.
+
 3. 계속 실행
 
 ```bash

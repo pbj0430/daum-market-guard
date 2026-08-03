@@ -149,6 +149,7 @@ class DaumCafeScraper:
             ],
         )
         posted_at = self._first_text(page, ["time", ".date", ".txt_date", "[class*='date']"])
+        content_text = self._content_text(page)
         images = self._extract_images_from_page_and_frames(page)
         return PostDetail(
             ref=ref,
@@ -156,6 +157,7 @@ class DaumCafeScraper:
             author_name=_clean_text(author),
             author_id="",
             posted_at=_clean_text(posted_at),
+            content_text=content_text,
             images=images,
         )
 
@@ -291,6 +293,33 @@ class DaumCafeScraper:
         except Exception:
             title = ""
         return _clean_text(title)
+
+    def _content_text(self, page: Page) -> str:
+        selectors = [
+            ".article_view",
+            ".article_content",
+            ".view_content",
+            ".bbs_contents",
+            ".content",
+            "article",
+            "main",
+        ]
+        for frame in page.frames:
+            for selector in selectors:
+                try:
+                    locator = frame.locator(selector).first
+                    if locator.count() == 0:
+                        continue
+                    text = _clean_text(locator.inner_text(timeout=1000))
+                    if len(text) >= 20:
+                        return text[:10000]
+                except Exception:
+                    continue
+        try:
+            text = _clean_text(page.locator("body").inner_text(timeout=1000))
+        except Exception:
+            return ""
+        return text[:10000]
 
     def _looks_logged_out(self, page: Page) -> bool:
         url = page.url.lower()

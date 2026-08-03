@@ -8,9 +8,10 @@ from pathlib import Path
 
 from .commenter import process_pending_comments
 from .config import load_config
+from .dashboard import serve_dashboard
 from .db import Database
 from .scraper import DaumCafeScraper
-from .service import run_forever, run_once
+from .service import _print_progress, run_forever, run_once
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -21,8 +22,12 @@ def main(argv: list[str] | None = None) -> None:
 
     subparsers.add_parser("init-config", help="copy config.example.toml to config.toml")
     subparsers.add_parser("login", help="open browser and save authenticated session")
-    subparsers.add_parser("scan", help="run one scan")
+    scan = subparsers.add_parser("scan", help="run one scan")
+    scan.add_argument("--quiet", action="store_true", help="hide per-post progress")
     subparsers.add_parser("daemon", help="run scans forever")
+    gui = subparsers.add_parser("gui", help="run local browser dashboard")
+    gui.add_argument("--host", default="127.0.0.1")
+    gui.add_argument("--port", type=int, default=8080)
 
     suspects = subparsers.add_parser("suspects", help="list suspicious posts")
     suspects.add_argument("--min-score", type=int, default=70)
@@ -55,7 +60,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"login session saved under: {login_config.user_data_dir}")
         return
     if args.command == "scan":
-        result = run_once(config)
+        result = run_once(config, progress=None if args.quiet else _print_progress)
         print(
             f"boards={result.stats.board_count} refs={result.stats.post_refs} "
             f"posts={result.stats.post_details} images={result.stats.images} "
@@ -64,6 +69,9 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.command == "daemon":
         run_forever(config)
+        return
+    if args.command == "gui":
+        serve_dashboard(config, host=args.host, port=args.port)
         return
     if args.command == "suspects":
         _print_suspects(config, args.min_score)

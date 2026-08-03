@@ -30,6 +30,7 @@ class PostDetail:
     author_name: str = ""
     author_id: str = ""
     posted_at: str = ""
+    content_text: str = ""
     images: list[ImageRef] = field(default_factory=list)
 
 

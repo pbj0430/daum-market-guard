@@ -30,6 +30,7 @@ class DetectorTests(unittest.TestCase):
                 self.assertGreaterEqual(assessment.score, 70)
                 self.assertEqual(assessment.duplicate_image_count, 1)
                 self.assertEqual(assessment.different_author_duplicate_count, 1)
+                self.assertIn("content_text", db.get_post(new_id).keys())
             finally:
                 db.close()
 
