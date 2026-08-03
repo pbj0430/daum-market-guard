@@ -38,7 +38,7 @@ chmod +x scripts/bootstrap_pi.sh
 
 ```bash
 sudo apt update
-sudo apt install -y python3-venv chromium-browser
+sudo apt install -y python3-full python3-venv chromium-browser
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
@@ -60,6 +60,12 @@ browser_executable_path = "/usr/bin/chromium-browser"
 python -m daum_market_guard login --config config.toml
 ```
 
+Raspberry Pi에서는 시스템 Python 대신 아래처럼 venv 실행 스크립트를 쓰세요.
+
+```bash
+./scripts/run.sh login --config config.toml
+```
+
 브라우저가 열리면 직접 아이디와 비밀번호를 입력하고 로그인합니다. 로그인 완료 후 터미널에서 Enter를 누르면 세션이 `browser-profile`에 저장됩니다.
 
 2. 1회 수집 및 판정
@@ -68,10 +74,22 @@ python -m daum_market_guard login --config config.toml
 python -m daum_market_guard scan --config config.toml
 ```
 
+Raspberry Pi:
+
+```bash
+./scripts/run.sh scan --config config.toml
+```
+
 3. 계속 실행
 
 ```bash
 python -m daum_market_guard daemon --config config.toml
+```
+
+Raspberry Pi:
+
+```bash
+./scripts/run.sh daemon --config config.toml
 ```
 
 4. 의심 글 확인

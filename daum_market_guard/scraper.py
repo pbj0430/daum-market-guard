@@ -50,8 +50,10 @@ class DaumCafeScraper:
             from playwright.sync_api import sync_playwright
         except ModuleNotFoundError as exc:
             raise RuntimeError(
-                "playwright가 설치되어 있지 않습니다. "
-                "`pip install -r requirements.txt` 후 `python -m playwright install chromium`을 실행하세요."
+                "Playwright is not installed in the Python environment running this command. "
+                "On Raspberry Pi, run `./scripts/bootstrap_pi.sh`, then use "
+                "`./scripts/run.sh login --config config.toml` or "
+                "`.venv/bin/python -m daum_market_guard login --config config.toml`."
             ) from exc
         self.config.user_data_dir.mkdir(parents=True, exist_ok=True)
         self._playwright = sync_playwright().start()
@@ -87,7 +89,7 @@ class DaumCafeScraper:
     def login_interactive(self) -> None:
         page = self.page()
         page.goto(self.config.login_url, wait_until="domcontentloaded", timeout=60_000)
-        print("브라우저에서 카카오/다음 로그인을 완료한 뒤 이 터미널에서 Enter를 누르세요.")
+        print("Complete Kakao/Daum login in the browser, then press Enter here.")
         input()
         page.goto(self.config.cafe_url, wait_until="domcontentloaded", timeout=60_000)
         self.context.storage_state(path=str(self.config.data_dir / "storage-state.json"))
@@ -100,7 +102,7 @@ class DaumCafeScraper:
             page.goto(url, wait_until="domcontentloaded", timeout=60_000)
             page.wait_for_timeout(1500)
             if self._looks_logged_out(page):
-                raise RuntimeError("로그인이 필요합니다. 먼저 login 명령으로 세션을 저장하세요.")
+                raise RuntimeError("Login is required. Run the login command first.")
             for link in self._extract_links_from_page_and_frames(page):
                 ref = self._link_to_post_ref(board, link)
                 if ref is not None:
