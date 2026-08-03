@@ -28,6 +28,7 @@ def main(argv: list[str] | None = None) -> None:
     gui = subparsers.add_parser("gui", help="run local browser dashboard")
     gui.add_argument("--host", default="127.0.0.1")
     gui.add_argument("--port", type=int, default=8080)
+    subparsers.add_parser("cleanup", help="remove known non-market false-positive rows")
 
     suspects = subparsers.add_parser("suspects", help="list suspicious posts")
     suspects.add_argument("--min-score", type=int, default=70)
@@ -72,6 +73,14 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.command == "gui":
         serve_dashboard(config, host=args.host, port=args.port)
+        return
+    if args.command == "cleanup":
+        db = Database(config.db_path)
+        try:
+            deleted = db.delete_false_positive_posts()
+        finally:
+            db.close()
+        print(f"deleted false-positive posts={deleted}")
         return
     if args.command == "suspects":
         _print_suspects(config, args.min_score)
@@ -183,6 +192,7 @@ def _replace_headless(config, headless: bool):
         headless=headless,
         locale=config.locale,
         timezone_id=config.timezone_id,
+        user_agent=config.user_agent,
         browser_executable_path=config.browser_executable_path,
         max_pages_per_board=config.max_pages_per_board,
         max_posts_per_board_page=config.max_posts_per_board_page,
@@ -212,6 +222,7 @@ def _replace_comment_min_score(config, min_score: int):
         headless=config.headless,
         locale=config.locale,
         timezone_id=config.timezone_id,
+        user_agent=config.user_agent,
         browser_executable_path=config.browser_executable_path,
         max_pages_per_board=config.max_pages_per_board,
         max_posts_per_board_page=config.max_posts_per_board_page,

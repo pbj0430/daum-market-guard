@@ -45,9 +45,10 @@ class DashboardState:
 
 def serve_dashboard(config: AppConfig, host: str = "127.0.0.1", port: int = 8080) -> None:
     state = DashboardState()
+    scan_config = _replace_headless(config, False)
 
     class Handler(DashboardHandler):
-        app_config = config
+        app_config = scan_config
         dashboard_state = state
 
     server = ThreadingHTTPServer((host, port), Handler)
@@ -252,6 +253,29 @@ def _loads(value: str | None) -> list[Any]:
     except json.JSONDecodeError:
         return []
     return parsed if isinstance(parsed, list) else []
+
+
+def _replace_headless(config: AppConfig, headless: bool) -> AppConfig:
+    return type(config)(
+        cafe_url=config.cafe_url,
+        login_url=config.login_url,
+        data_dir=config.data_dir,
+        user_data_dir=config.user_data_dir,
+        poll_interval_seconds=config.poll_interval_seconds,
+        headless=headless,
+        locale=config.locale,
+        timezone_id=config.timezone_id,
+        user_agent=config.user_agent,
+        browser_executable_path=config.browser_executable_path,
+        max_pages_per_board=config.max_pages_per_board,
+        max_posts_per_board_page=config.max_posts_per_board_page,
+        image_timeout_seconds=config.image_timeout_seconds,
+        duplicate_hamming_threshold=config.duplicate_hamming_threshold,
+        blacklist_score_threshold=config.blacklist_score_threshold,
+        boards=config.boards,
+        comment=config.comment,
+        selectors=config.selectors,
+    )
 
 
 INDEX_HTML = r"""<!doctype html>

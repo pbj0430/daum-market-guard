@@ -64,6 +64,7 @@ class DaumCafeScraper:
             "viewport": {"width": 1280, "height": 900},
             "locale": self.config.locale,
             "timezone_id": self.config.timezone_id,
+            "user_agent": self.config.user_agent,
             "args": [
                 "--disable-dev-shm-usage",
                 "--no-sandbox",
@@ -113,6 +114,11 @@ class DaumCafeScraper:
             page.wait_for_timeout(1500)
             if self._looks_logged_out(page):
                 raise RuntimeError("Login is required. Run the login command first.")
+            if self._looks_unsupported_browser(page):
+                raise RuntimeError(
+                    "Daum returned the unsupported-browser page. "
+                    "Run scan from VNC GUI or update Chromium."
+                )
             for link in self._extract_links_from_page_and_frames(page):
                 ref = self._link_to_post_ref(board, link)
                 if ref is not None:
@@ -236,6 +242,8 @@ class DaumCafeScraper:
         parsed = urlparse(href)
         if "cafe.daum.net" not in parsed.netloc:
             return None
+        if self._is_non_market_link(board, href):
+            return None
         if self.config.selectors.post_link_contains:
             if not any(token in href for token in self.config.selectors.post_link_contains):
                 return None
@@ -250,10 +258,18 @@ class DaumCafeScraper:
         parsed = urlparse(href)
         path_parts = [part for part in parsed.path.split("/") if part]
         query = parse_qs(parsed.query)
+        fldid = _first_query(query, "fldid", "board", "folderid")
+        if fldid and fldid != board.board_id:
+            return None
         for key in ("dataid", "articleid", "bbsid"):
             if query.get(key):
                 return f"{board.board_id}:{query[key][0]}"
-        if len(path_parts) >= 3 and path_parts[-2] == board.board_id and path_parts[-1].isdigit():
+        if (
+            len(path_parts) >= 3
+            and path_parts[0] == board.cafe_id
+            and path_parts[-2] == board.board_id
+            and path_parts[-1].isdigit()
+        ):
             return f"{board.board_id}:{path_parts[-1]}"
         for pattern in POST_ID_PATTERNS:
             match = pattern.search(href)
@@ -261,6 +277,17 @@ class DaumCafeScraper:
                 board_id = match.groupdict().get("board") or board.board_id
                 return f"{board_id}:{match.group('id')}"
         return None
+
+    def _is_non_market_link(self, board: BoardConfig, href: str) -> bool:
+        parsed = urlparse(href)
+        path_parts = [part for part in parsed.path.split("/") if part]
+        query = parse_qs(parsed.query)
+        fldid = _first_query(query, "fldid", "board", "folderid")
+        if fldid is not None:
+            return fldid != board.board_id
+        if path_parts and path_parts[0] == board.cafe_id:
+            return board.board_id not in path_parts
+        return True
 
     def _is_content_image(self, src: str, width: int, height: int) -> bool:
         lower = src.lower()
@@ -331,6 +358,17 @@ class DaumCafeScraper:
             return False
         return "로그인" in text and "카카오" in text and "비밀번호" in text
 
+    def _looks_unsupported_browser(self, page: Page) -> bool:
+        try:
+            text = page.locator("body").inner_text(timeout=1000)
+        except Exception:
+            return False
+        return (
+            "Internet Explorer 10" in text
+            or "브라우저 지원이 종료" in text
+            or "브라우저 업데이트" in text
+        )
+
     def _click_login_if_available(self, page: Page) -> None:
         candidates = [
             "a:has-text('로그인')",
@@ -373,6 +411,14 @@ def _guess_suffix(image_url: str) -> str:
 
 def _clean_text(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
+
+
+def _first_query(query: dict[str, list[str]], *keys: str) -> str | None:
+    for key in keys:
+        values = query.get(key)
+        if values:
+            return values[0]
+    return None
 
 
 def find_system_chromium() -> str | None:

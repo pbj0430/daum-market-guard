@@ -258,6 +258,23 @@ class Database:
             ).fetchall()
         )
 
+    def delete_false_positive_posts(self) -> int:
+        rows = self.conn.execute(
+            """
+            SELECT id
+            FROM posts
+            WHERE title LIKE '%Daum카페 라운지%'
+               OR title LIKE '%브라우저%'
+               OR content_text LIKE '%Internet Explorer 10%'
+               OR content_text LIKE '%브라우저 지원이 종료%'
+            """
+        ).fetchall()
+        post_ids = [int(row["id"]) for row in rows]
+        for post_id in post_ids:
+            self.conn.execute("DELETE FROM posts WHERE id = ?", (post_id,))
+        self.conn.commit()
+        return len(post_ids)
+
     def iter_prior_images(self, post_id: int) -> Iterable[StoredImage]:
         rows = self.conn.execute(
             """

@@ -8,10 +8,10 @@ import tomllib
 
 
 DEFAULT_BOARDS = [
-    ("중고장터 C3Zg", "https://cafe.daum.net/730418/C3Zg"),
-    ("중고장터 C3Zi", "https://cafe.daum.net/730418/C3Zi"),
-    ("중고장터 TyYz", "https://cafe.daum.net/730418/TyYz"),
-    ("중고장터 KykD", "https://cafe.daum.net/730418/KykD"),
+    ("Market C3Zg", "https://cafe.daum.net/730418/C3Zg"),
+    ("Market C3Zi", "https://cafe.daum.net/730418/C3Zi"),
+    ("Market TyYz", "https://cafe.daum.net/730418/TyYz"),
+    ("Market KykD", "https://cafe.daum.net/730418/KykD"),
 ]
 
 
@@ -19,6 +19,11 @@ DEFAULT_BOARDS = [
 class BoardConfig:
     name: str
     url: str
+
+    @property
+    def cafe_id(self) -> str:
+        path = urlparse(self.url).path.strip("/").split("/")
+        return path[0] if path else ""
 
     @property
     def board_id(self) -> str:
@@ -33,11 +38,13 @@ class CommentConfig:
     min_score: int = 80
     max_per_run: int = 2
     template: str = (
-        "자동 탐지 알림: 이 글의 이미지 {duplicate_image_count}장이 과거 게시글 "
-        "{duplicate_post_count}개와 유사합니다.\n"
-        "위험도 추정: {score}%.\n"
-        "참고 원글: {source_links}\n"
-        "사기 확정이 아닌 이미지 재사용 주의 신호입니다."
+        "\uc790\ub3d9 \ud0d0\uc9c0 \uc54c\ub9bc: \uc774 \uae00\uc758 "
+        "\uc774\ubbf8\uc9c0 {duplicate_image_count}\uc7a5\uc774 \uacfc\uac70 "
+        "\uac8c\uc2dc\uae00 {duplicate_post_count}\uac1c\uc640 \uc720\uc0ac\ud569\ub2c8\ub2e4.\n"
+        "\uc704\ud5d8\ub3c4 \ucd94\uc815: {score}%.\n"
+        "\ucc38\uace0 \uc6d0\uae00: {source_links}\n"
+        "\uc0ac\uae30 \ud655\uc815\uc774 \uc544\ub2cc \uc774\ubbf8\uc9c0 "
+        "\uc7ac\uc0ac\uc6a9 \uc8fc\uc758 \uc2e0\ud638\uc785\ub2c8\ub2e4."
     )
 
 
@@ -45,7 +52,10 @@ class CommentConfig:
 class SelectorConfig:
     post_link_contains: list[str] = field(default_factory=list)
     comment_textarea: str = "textarea, [contenteditable='true']"
-    comment_submit: str = "button:has-text('등록'), button:has-text('댓글'), input[type='submit']"
+    comment_submit: str = (
+        "button:has-text('\ub4f1\ub85d'), button:has-text('\ub313\uae00'), "
+        "input[type='submit']"
+    )
 
 
 @dataclass(frozen=True)
@@ -58,6 +68,10 @@ class AppConfig:
     headless: bool = True
     locale: str = "ko-KR"
     timezone_id: str = "Asia/Seoul"
+    user_agent: str = (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    )
     browser_executable_path: str | None = None
     max_pages_per_board: int = 1
     max_posts_per_board_page: int = 40
@@ -131,6 +145,7 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
         headless=bool(data.get("headless", True)),
         locale=str(data.get("locale", "ko-KR")),
         timezone_id=str(data.get("timezone_id", "Asia/Seoul")),
+        user_agent=str(data.get("user_agent", AppConfig.user_agent)),
         browser_executable_path=_optional_str(data.get("browser_executable_path")),
         max_pages_per_board=int(data.get("max_pages_per_board", 1)),
         max_posts_per_board_page=int(data.get("max_posts_per_board_page", 40)),
