@@ -26,6 +26,7 @@ Copy-Item config.example.toml config.toml
 ### Raspberry Pi 3B
 
 64비트 Raspberry Pi OS 권장입니다. Pi 3B는 메모리가 작아서 Playwright 내장 Chromium보다 시스템 Chromium이 안정적일 수 있습니다.
+시스템에 `chromium-browser` 또는 `chromium`이 있으면 자동으로 그 실행 파일을 사용합니다.
 
 간단 설치:
 

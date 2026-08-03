@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -67,8 +68,9 @@ class DaumCafeScraper:
                 "--disable-gpu",
             ],
         }
-        if self.config.browser_executable_path:
-            launch_args["executable_path"] = self.config.browser_executable_path
+        executable_path = self.config.browser_executable_path or find_system_chromium()
+        if executable_path:
+            launch_args["executable_path"] = executable_path
         self.context = self._playwright.chromium.launch_persistent_context(**launch_args)
 
     def close(self) -> None:
@@ -314,3 +316,16 @@ def _guess_suffix(image_url: str) -> str:
 
 def _clean_text(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
+
+
+def find_system_chromium() -> str | None:
+    for command in (
+        "chromium-browser",
+        "chromium",
+        "google-chrome-stable",
+        "google-chrome",
+    ):
+        path = shutil.which(command)
+        if path:
+            return path
+    return None
