@@ -5,7 +5,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import parse_qs, quote, urljoin, urlparse
 
 from .config import AppConfig, BoardConfig
 from .models import ImageRef, PostDetail, PostRef
@@ -24,6 +24,11 @@ POST_ID_PATTERNS = [
 ARTICLE_FUNC_PATTERNS = [
     re.compile(r"['\"](?P<board>[A-Za-z0-9]+)['\"]\s*,\s*['\"]?(?P<id>\d+)['\"]?"),
     re.compile(r"(?P<board>[A-Za-z0-9]+)\D{0,20}(?P<id>\d{2,})"),
+]
+CONTENT_SELECTORS = [
+    "#user_contents",
+    ".board_post.tx-content-container",
+    ".tx-content-container",
 ]
 
 
@@ -66,6 +71,9 @@ class DaumCafeScraper:
             "headless": self.config.headless,
             "user_data_dir": str(self.config.user_data_dir),
             "viewport": {"width": 1280, "height": 900},
+            "screen": {"width": 1280, "height": 900},
+            "is_mobile": False,
+            "has_touch": False,
             "locale": self.config.locale,
             "timezone_id": self.config.timezone_id,
             "user_agent": self.config.user_agent,
@@ -73,6 +81,7 @@ class DaumCafeScraper:
                 "--disable-dev-shm-usage",
                 "--no-sandbox",
                 "--disable-gpu",
+                "--window-size=1280,900",
                 f"--lang={self.config.locale}",
             ],
         }
@@ -98,15 +107,22 @@ class DaumCafeScraper:
 
     def login_interactive(self) -> None:
         page = self.page()
-        page.goto(self.config.cafe_url, wait_until="domcontentloaded", timeout=60_000)
+        page.goto(self._desktop_url(self.config.cafe_url), wait_until="domcontentloaded", timeout=60_000)
         page.wait_for_timeout(1000)
-        self._click_login_if_available(page)
-        print(
-            "The cafe page is open. Log in from the browser if needed, "
-            "then press Enter here."
-        )
-        input()
-        page.goto(self.config.cafe_url, wait_until="domcontentloaded", timeout=60_000)
+        if self._looks_logged_out(page):
+            if self.config.login.has_credentials:
+                self._login_with_credentials(page, self.config.cafe_url)
+            else:
+                self._click_login_if_available(page)
+                print(
+                    "The cafe page is open. Log in from the browser if needed, "
+                    "then press Enter here."
+                )
+                input()
+        page.goto(self._desktop_url(self.config.cafe_url), wait_until="domcontentloaded", timeout=60_000)
+        page.wait_for_timeout(1000)
+        if self._looks_logged_out(page):
+            raise RuntimeError("Login did not complete. Check config [login] or log in manually.")
         self.context.storage_state(path=str(self.config.data_dir / "storage-state.json"))
 
     def collect_board_posts(self, board: BoardConfig) -> list[PostRef]:
@@ -114,10 +130,7 @@ class DaumCafeScraper:
         for page_no in range(1, self.config.max_pages_per_board + 1):
             for url in self._board_page_urls(board, page_no):
                 page = self.page()
-                page.goto(url, wait_until="domcontentloaded", timeout=60_000)
-                page.wait_for_timeout(1500)
-                if self._looks_logged_out(page):
-                    raise RuntimeError("Login is required. Run the login command first.")
+                self._goto_with_login(page, url)
                 if self._looks_unsupported_browser(page):
                     raise RuntimeError(
                         "Daum returned the unsupported-browser page. "
@@ -137,8 +150,7 @@ class DaumCafeScraper:
         reports = []
         for url in self._board_page_urls(board, 1):
             page = self.page()
-            page.goto(url, wait_until="domcontentloaded", timeout=60_000)
-            page.wait_for_timeout(1500)
+            self._goto_with_login(page, url)
             links = self._extract_links_from_page_and_frames(page)
             accepted = [self._link_to_post_ref(board, link) for link in links]
             accepted = [ref for ref in accepted if ref is not None]
@@ -177,16 +189,17 @@ class DaumCafeScraper:
 
     def collect_post_detail(self, ref: PostRef) -> PostDetail:
         page = self.page()
-        page.goto(ref.url, wait_until="domcontentloaded", timeout=60_000)
-        page.wait_for_timeout(1500)
+        self._goto_with_login(page, ref.url)
         title = self._first_text(
             page,
             [
+                ".article_subject",
+                ".tit_subject",
+                "#articleTitle",
                 "h1",
                 "h2",
                 "h3",
                 ".tit_view",
-                ".article_subject",
                 ".subject",
                 "meta[property='og:title']",
             ],
@@ -215,6 +228,80 @@ class DaumCafeScraper:
             images=images,
         )
 
+    def _goto_with_login(self, page: Page, url: str) -> None:
+        target_url = self._desktop_url(url)
+        page.goto(target_url, wait_until="domcontentloaded", timeout=60_000)
+        page.wait_for_timeout(1500)
+        if not self._looks_logged_out(page):
+            return
+        if not self.config.login.has_credentials:
+            raise RuntimeError(
+                "Login is required. Add [login] username/password to config.toml "
+                "or run the login command manually."
+            )
+        self._login_with_credentials(page, target_url)
+        page.goto(target_url, wait_until="domcontentloaded", timeout=60_000)
+        page.wait_for_timeout(1500)
+        if self._looks_logged_out(page):
+            raise RuntimeError("Automatic login failed. Check the saved credentials or selectors.")
+
+    def _login_with_credentials(self, page: Page, return_url: str) -> None:
+        if self._looks_logged_out(page):
+            self._click_login_if_available(page)
+            page.wait_for_timeout(1000)
+        if not self._is_login_page(page):
+            page.goto(self._login_url(return_url), wait_until="domcontentloaded", timeout=60_000)
+            page.wait_for_timeout(1500)
+        self._fill_first_visible(
+            page,
+            self.config.login.username_selector,
+            self.config.login.username,
+        )
+        self._fill_first_visible(
+            page,
+            self.config.login.password_selector,
+            self.config.login.password,
+        )
+        self._click_first_visible(page, self.config.login.submit_selector)
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=20_000)
+        except Exception:
+            pass
+        page.wait_for_timeout(2500)
+
+    def _login_url(self, return_url: str) -> str:
+        if "continue=" in self.config.login_url:
+            return self.config.login_url
+        separator = "&" if "?" in self.config.login_url else "?"
+        return (
+            f"{self.config.login_url}{separator}"
+            f"continue={quote(self._desktop_url(return_url), safe='')}"
+        )
+
+    def _fill_first_visible(self, page: Page, selector: str, value: str) -> None:
+        last_error: Exception | None = None
+        for frame in page.frames:
+            try:
+                locator = frame.locator(selector).first
+                locator.wait_for(state="visible", timeout=5000)
+                locator.fill(value)
+                return
+            except Exception as exc:
+                last_error = exc
+        raise RuntimeError(f"Could not find login field for selector: {selector}. {last_error}")
+
+    def _click_first_visible(self, page: Page, selector: str) -> None:
+        last_error: Exception | None = None
+        for frame in page.frames:
+            try:
+                locator = frame.locator(selector).first
+                locator.wait_for(state="visible", timeout=5000)
+                locator.click(timeout=5000)
+                return
+            except Exception as exc:
+                last_error = exc
+        raise RuntimeError(f"Could not find login submit button for selector: {selector}. {last_error}")
+
     def download_image(self, image_url: str, referer: str) -> bytes | None:
         if self.context is None:
             raise RuntimeError("scraper not started")
@@ -240,13 +327,23 @@ class DaumCafeScraper:
         return f"{board_url}{sep}page={page_no}"
 
     def _board_page_urls(self, board: BoardConfig, page_no: int) -> list[str]:
-        urls = [self._board_page_url(board.url, page_no)]
+        urls = [self._board_page_url(self._desktop_url(board.url), page_no)]
+        if not self.config.allow_mobile_fallback:
+            return urls
         mobile = f"https://m.cafe.daum.net/{board.cafe_id}/{board.board_id}"
         if page_no > 1:
             mobile = f"{mobile}?page={page_no}"
         if mobile not in urls:
             urls.append(mobile)
         return urls
+
+    def _desktop_url(self, url: str) -> str:
+        parsed = urlparse(url)
+        if parsed.netloc != "m.cafe.daum.net":
+            return url
+        query = f"?{parsed.query}" if parsed.query else ""
+        fragment = f"#{parsed.fragment}" if parsed.fragment else ""
+        return f"https://cafe.daum.net{parsed.path}{query}{fragment}"
 
     def _extract_links_from_page_and_frames(self, page: Page) -> list[dict[str, str]]:
         links: list[dict[str, str]] = []
@@ -270,19 +367,28 @@ class DaumCafeScraper:
     def _extract_images_from_page_and_frames(self, page: Page) -> list[ImageRef]:
         found: dict[str, ImageRef] = {}
         script = """
-            () => Array.from(document.images).map((img) => ({
-                src: img.currentSrc || img.src || '',
-                width: img.naturalWidth || img.width || 0,
-                height: img.naturalHeight || img.height || 0
-            }))
+            (selectors) => {
+                const roots = selectors.flatMap((selector) =>
+                    Array.from(document.querySelectorAll(selector))
+                );
+                const scopes = roots.length ? roots : [document];
+                return scopes.flatMap((root) =>
+                    Array.from(root.querySelectorAll('img')).map((img) => ({
+                        src: img.currentSrc || img.src || '',
+                        dataSrc: img.getAttribute('data-img-src') || '',
+                        width: img.naturalWidth || img.width || 0,
+                        height: img.naturalHeight || img.height || 0
+                    }))
+                );
+            }
         """
         for frame in page.frames:
             try:
-                images = frame.evaluate(script)
+                images = frame.evaluate(script, CONTENT_SELECTORS)
             except Exception:
                 continue
             for item in images:
-                src = str(item.get("src") or "")
+                src = str(item.get("dataSrc") or item.get("src") or "")
                 if not src.startswith("http"):
                     src = urljoin(frame.url, src)
                 width = int(item.get("width") or 0)
@@ -410,6 +516,7 @@ class DaumCafeScraper:
 
     def _content_text(self, page: Page) -> str:
         selectors = [
+            *CONTENT_SELECTORS,
             ".article_view",
             ".article_content",
             ".view_content",
@@ -440,10 +547,30 @@ class DaumCafeScraper:
         if "accounts.kakao.com" in url or "login" in url:
             return True
         try:
+            if page.locator(self.config.login.password_selector).first.is_visible(timeout=500):
+                return True
+        except Exception:
+            pass
+        try:
             text = page.locator("body").inner_text(timeout=1000)
         except Exception:
             return False
+        try:
+            loginout = page.locator("#loginout").first.inner_text(timeout=500)
+        except Exception:
+            loginout = ""
+        if "로그아웃" in loginout:
+            return False
         return "로그인" in text and "카카오" in text and "비밀번호" in text
+
+    def _is_login_page(self, page: Page) -> bool:
+        url = page.url.lower()
+        if "accounts.kakao.com" in url or "logins.daum.net" in url:
+            return True
+        try:
+            return page.locator(self.config.login.password_selector).first.is_visible(timeout=1000)
+        except Exception:
+            return False
 
     def _looks_unsupported_browser(self, page: Page) -> bool:
         try:

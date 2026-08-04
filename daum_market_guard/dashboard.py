@@ -362,6 +362,7 @@ def _replace_headless(config: AppConfig, headless: bool) -> AppConfig:
         locale=config.locale,
         timezone_id=config.timezone_id,
         user_agent=config.user_agent,
+        allow_mobile_fallback=config.allow_mobile_fallback,
         browser_executable_path=config.browser_executable_path,
         max_pages_per_board=config.max_pages_per_board,
         max_posts_per_board_page=config.max_posts_per_board_page,
@@ -370,6 +371,7 @@ def _replace_headless(config: AppConfig, headless: bool) -> AppConfig:
         blacklist_score_threshold=config.blacklist_score_threshold,
         boards=config.boards,
         comment=config.comment,
+        login=config.login,
         selectors=config.selectors,
     )
 

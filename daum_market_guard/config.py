@@ -49,6 +49,25 @@ class CommentConfig:
 
 
 @dataclass(frozen=True)
+class LoginConfig:
+    username: str = ""
+    password: str = ""
+    username_selector: str = (
+        "input[name='loginId'], input[name='email'], input[type='email'], "
+        "input[name='username'], input#loginId"
+    )
+    password_selector: str = "input[name='password'], input[type='password']"
+    submit_selector: str = (
+        "button[type='submit'], input[type='submit'], "
+        "button:has-text('로그인'), a:has-text('로그인')"
+    )
+
+    @property
+    def has_credentials(self) -> bool:
+        return bool(self.username and self.password)
+
+
+@dataclass(frozen=True)
 class SelectorConfig:
     post_link_contains: list[str] = field(default_factory=list)
     comment_textarea: str = "textarea, [contenteditable='true']"
@@ -72,6 +91,7 @@ class AppConfig:
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
     )
+    allow_mobile_fallback: bool = False
     browser_executable_path: str | None = None
     max_pages_per_board: int = 1
     max_posts_per_board_page: int = 40
@@ -82,6 +102,7 @@ class AppConfig:
         default_factory=lambda: [BoardConfig(name, url) for name, url in DEFAULT_BOARDS]
     )
     comment: CommentConfig = field(default_factory=CommentConfig)
+    login: LoginConfig = field(default_factory=LoginConfig)
     selectors: SelectorConfig = field(default_factory=SelectorConfig)
 
     @property
@@ -125,6 +146,19 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
         template=str(comment_raw.get("template", CommentConfig.template)),
     )
 
+    login_raw = data.get("login", {})
+    login = LoginConfig(
+        username=str(login_raw.get("username", "")),
+        password=str(login_raw.get("password", "")),
+        username_selector=str(
+            login_raw.get("username_selector", LoginConfig.username_selector)
+        ),
+        password_selector=str(
+            login_raw.get("password_selector", LoginConfig.password_selector)
+        ),
+        submit_selector=str(login_raw.get("submit_selector", LoginConfig.submit_selector)),
+    )
+
     selectors_raw = data.get("selectors", {})
     selectors = SelectorConfig(
         post_link_contains=list(selectors_raw.get("post_link_contains", [])),
@@ -146,6 +180,7 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
         locale=str(data.get("locale", "ko-KR")),
         timezone_id=str(data.get("timezone_id", "Asia/Seoul")),
         user_agent=str(data.get("user_agent", AppConfig.user_agent)),
+        allow_mobile_fallback=bool(data.get("allow_mobile_fallback", False)),
         browser_executable_path=_optional_str(data.get("browser_executable_path")),
         max_pages_per_board=int(data.get("max_pages_per_board", 1)),
         max_posts_per_board_page=int(data.get("max_posts_per_board_page", 40)),
@@ -154,5 +189,6 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
         blacklist_score_threshold=int(data.get("blacklist_score_threshold", 90)),
         boards=boards,
         comment=comment,
+        login=login,
         selectors=selectors,
     )

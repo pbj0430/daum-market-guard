@@ -6,6 +6,7 @@ headless = true
 locale = "ko-KR"
 timezone_id = "Asia/Seoul"
 user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+allow_mobile_fallback = false
 
 # Keep this directory outside the repo if you want to copy it between PC and Raspberry Pi.
 user_data_dir = "browser-profile"
@@ -19,6 +20,15 @@ max_posts_per_board_page = 40
 image_timeout_seconds = 20
 duplicate_hamming_threshold = 8
 blacklist_score_threshold = 90
+
+[login]
+# Optional. If both values are set, scan/login will automatically sign in again
+# when Daum/Kakao sends the browser to a login page.
+username = ""
+password = ""
+username_selector = "input[name='loginId'], input[name='email'], input[type='email'], input[name='username'], input#loginId"
+password_selector = "input[name='password'], input[type='password']"
+submit_selector = "button[type='submit'], input[type='submit'], button:has-text('로그인'), a:has-text('로그인')"
 
 [[boards]]
 name = "중고장터 C3Zg"
