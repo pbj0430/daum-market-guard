@@ -107,6 +107,13 @@ Login 버튼 -> 열린 카페 창에서 로그인 -> Close Login 버튼 -> Debug
 
 일반 Chromium에서 로그인한 세션과 스캐너가 쓰는 `browser-profile` 세션은 다를 수 있습니다. GUI의 `Login` 버튼으로 열린 브라우저에서 로그인해야 스캐너가 같은 세션을 씁니다. `Debug`는 각 게시판의 desktop/mobile 페이지에서 글 링크를 몇 개 찾았는지 보여줍니다.
 
+`Opening in existing browser session` 오류가 나면 로그인 브라우저가 아직 `browser-profile`을 잡고 있는 상태입니다. GUI를 `Ctrl+C`로 끄고 아래를 한 번 실행한 뒤 다시 시작합니다.
+
+```bash
+./scripts/stop_profile_browser.sh
+./scripts/gui.sh
+```
+
 잘못 저장된 브라우저 안내 페이지 정리:
 
 ```bash

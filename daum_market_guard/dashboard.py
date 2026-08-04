@@ -5,7 +5,7 @@ import mimetypes
 import threading
 from datetime import datetime, timezone
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -54,7 +54,7 @@ def serve_dashboard(config: AppConfig, host: str = "127.0.0.1", port: int = 8080
         app_config = scan_config
         dashboard_state = state
 
-    server = ThreadingHTTPServer((host, port), Handler)
+    server = HTTPServer((host, port), Handler)
     print(f"Dashboard: http://{host}:{port}", flush=True)
     server.serve_forever()
 
@@ -226,7 +226,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             scraper = self.dashboard_state.login_scraper
             self.dashboard_state.login_scraper = None
         if scraper is not None:
-            scraper.close()
+            try:
+                scraper.close()
+            except Exception as exc:
+                self.dashboard_state.add_event("login_browser_close_failed", {"error": str(exc)})
+                self._send_json({"closed": False, "error": str(exc)})
+                return
         self.dashboard_state.add_event("login_browser_closed", {})
         self._send_json({"closed": True})
 
@@ -234,6 +239,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if self.dashboard_state.running:
             self._send_json({"started": False, "message": "scan already running"})
             return
+        with self.dashboard_state.lock:
+            if self.dashboard_state.login_scraper is not None:
+                self._send_json(
+                    {
+                        "started": False,
+                        "message": "close the login browser before debugging",
+                    }
+                )
+                self.dashboard_state.add_event(
+                    "debug_blocked",
+                    {"message": "Close Login Browser first, then debug."},
+                )
+                return
 
         def worker() -> None:
             self.dashboard_state.add_event("debug_started", {})
