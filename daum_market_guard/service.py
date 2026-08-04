@@ -31,7 +31,17 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
     db = Database(config.db_path)
     stats = ScrapeStats()
     assessed = 0
-    _emit(progress, "scan_started", {})
+    _emit(
+        progress,
+        "scan_started",
+        {
+            "boards": len(config.boards),
+            "headless": config.headless,
+            "mobile_fallback": config.allow_mobile_fallback,
+            "data_dir": str(config.data_dir),
+            "profile": str(config.user_data_dir),
+        },
+    )
     try:
         with DaumCafeScraper(config) as scraper:
             for board in config.boards:
@@ -44,6 +54,15 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
                     "board_posts_found",
                     {"board": board.name, "count": len(refs)},
                 )
+                if not refs:
+                    try:
+                        _emit(progress, "board_debug", scraper.inspect_board(board))
+                    except Exception as exc:
+                        _emit(
+                            progress,
+                            "board_debug_failed",
+                            {"board": board.name, "error": str(exc)},
+                        )
                 for index, ref in enumerate(refs, start=1):
                     _emit(
                         progress,
@@ -183,10 +202,25 @@ def _emit(progress: ProgressCallback | None, event: str, payload: dict[str, Any]
 
 
 def _print_progress(event: str, payload: dict[str, Any]) -> None:
-    if event == "board_started":
-        print(f"[scan] board: {payload['board']}", flush=True)
+    if event == "scan_started":
+        print(
+            "[scan] started: "
+            f"boards={payload['boards']} headless={payload['headless']} "
+            f"mobile_fallback={payload['mobile_fallback']} "
+            f"profile={payload['profile']} data={payload['data_dir']}",
+            flush=True,
+        )
+    elif event == "board_started":
+        print(f"[scan] board: {payload['board']} url={payload['url']}", flush=True)
     elif event == "board_posts_found":
         print(f"[scan] posts found: {payload['board']} count={payload['count']}", flush=True)
+    elif event == "board_debug":
+        _print_board_debug(payload)
+    elif event == "board_debug_failed":
+        print(
+            f"[scan] debug failed: {payload['board']} error={payload['error']}",
+            flush=True,
+        )
     elif event == "post_started":
         print(
             f"[scan] post {payload['index']}/{payload['total']}: {payload['title']}",
@@ -200,3 +234,47 @@ def _print_progress(event: str, payload: dict[str, Any]) -> None:
         )
     elif event == "scan_failed":
         print(f"[scan] failed: {payload['error']}", flush=True)
+
+
+def _print_board_debug(payload: dict[str, Any]) -> None:
+    print(
+        "[scan] zero-result debug: "
+        f"board={payload.get('board')} accepted={payload.get('accepted_count')} "
+        f"links={payload.get('link_count')} logged_out={payload.get('logged_out')} "
+        f"unsupported={payload.get('unsupported_browser')}",
+        flush=True,
+    )
+    for report in payload.get("url_reports", []):
+        print(
+            "[scan]   page: "
+            f"requested={report.get('requested_url')} final={report.get('page_url')} "
+            f"title={_short(report.get('title'), 120)} frames={report.get('frame_count')} "
+            f"links={report.get('link_count')} accepted={report.get('accepted_count')} "
+            f"logged_out={report.get('logged_out')} unsupported={report.get('unsupported_browser')}",
+            flush=True,
+        )
+        for sample in report.get("accepted_samples", [])[:5]:
+            print(
+                "[scan]     accepted: "
+                f"title={_short(sample.get('title'), 80)} "
+                f"key={sample.get('post_key')} url={sample.get('url')}",
+                flush=True,
+            )
+        if not report.get("accepted_samples"):
+            for sample in report.get("link_samples", [])[:5]:
+                text = _short(sample.get("text"), 80)
+                href = sample.get("href") or sample.get("rawHref") or sample.get("dataHref")
+                print(
+                    f"[scan]     link sample: text={text} href={_short(href, 160)}",
+                    flush=True,
+                )
+        excerpt = _short(report.get("body_excerpt"), 300)
+        if excerpt:
+            print(f"[scan]     body: {excerpt}", flush=True)
+
+
+def _short(value: Any, max_length: int) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= max_length:
+        return text
+    return f"{text[: max_length - 3]}..."

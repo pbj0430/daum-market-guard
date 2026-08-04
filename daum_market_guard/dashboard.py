@@ -470,7 +470,7 @@ INDEX_HTML = r"""<!doctype html>
         if (e.event === 'post_failed') {
           body = `${esc(short(p.title, 120))}<br>${esc(p.error)}<br>${esc(p.url)}`;
         }
-        if (e.event === 'debug_board') {
+        if (e.event === 'debug_board' || e.event === 'board_debug') {
           const reports = (p.url_reports || []).map(r => `${esc(r.requested_url)} => accepted ${r.accepted_count}/${r.link_count}, logged_out=${r.logged_out}`).join('<br>');
           body = `${p.board}: accepted ${p.accepted_count}/${p.link_count}, logged_out=${p.logged_out}, unsupported=${p.unsupported_browser}<br>${reports}<br>${esc(short(p.body_excerpt, 240))}`;
         } else if (e.event !== 'post_failed') {
