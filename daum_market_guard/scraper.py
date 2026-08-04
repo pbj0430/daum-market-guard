@@ -296,6 +296,8 @@ class DaumCafeScraper:
         title = _clean_text(str(link.get("text") or ""))
         if not href or len(title) < 2:
             return None
+        if _is_notice_title(title):
+            return None
         if "cafe.daum.net" not in href and not href.startswith("/"):
             return None
         href = urljoin(board.url, href)
@@ -496,6 +498,34 @@ def _guess_suffix(image_url: str) -> str:
 
 def _clean_text(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
+
+
+def _is_notice_title(title: str) -> bool:
+    normalized = title.strip()
+    if not normalized:
+        return True
+    notice_prefixes = (
+        "공지",
+        "[공지",
+        "필독",
+        "[필독",
+        "운영",
+        "[운영",
+        # Mojibake variants seen from old Daum mobile pages when text is decoded badly.
+        "怨듭",
+        "[怨듭",
+        "????",
+    )
+    if normalized.startswith(notice_prefixes):
+        return True
+    notice_fragments = (
+        "인터넷 익스플로러",
+        "Internet Explorer",
+        "브라우저 지원",
+        "카페 이용을 위해",
+        "Daum카페 라운지",
+    )
+    return any(fragment in normalized for fragment in notice_fragments)
 
 
 def _first_query(query: dict[str, list[str]], *keys: str) -> str | None:

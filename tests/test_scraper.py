@@ -4,6 +4,7 @@ from unittest.mock import patch
 from daum_market_guard.config import AppConfig, BoardConfig
 from daum_market_guard.scraper import find_system_chromium
 from daum_market_guard.scraper import DaumCafeScraper
+from daum_market_guard.scraper import _is_notice_title
 
 
 class ScraperTests(unittest.TestCase):
@@ -42,6 +43,19 @@ class ScraperTests(unittest.TestCase):
         )
         self.assertIsNotNone(ref)
         self.assertEqual(ref.post_key, "C3Zg:123")
+
+    def test_rejects_notice_titles(self) -> None:
+        scraper = DaumCafeScraper(AppConfig())
+        board = BoardConfig("Market C3Zg", "https://cafe.daum.net/730418/C3Zg")
+        ref = scraper._link_to_post_ref(
+            board,
+            {
+                "text": "공지 인터넷 익스플로러 안내",
+                "href": "https://cafe.daum.net/_c21_/bbs_read?fldid=C3Zg&dataid=1",
+            },
+        )
+        self.assertIsNone(ref)
+        self.assertTrue(_is_notice_title("怨듭??명꽣???ш린"))
 
     def test_accepts_javascript_article_links(self) -> None:
         scraper = DaumCafeScraper(AppConfig())

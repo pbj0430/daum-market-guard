@@ -465,10 +465,13 @@ INDEX_HTML = r"""<!doctype html>
       document.getElementById('events').innerHTML = (status.events || []).map(e => {
         const p = e.payload || {};
         let body = p.title || p.board || p.error || p.message || JSON.stringify(p);
+        if (e.event === 'post_failed') {
+          body = `${esc(short(p.title, 120))}<br>${esc(p.error)}<br>${esc(p.url)}`;
+        }
         if (e.event === 'debug_board') {
           const reports = (p.url_reports || []).map(r => `${esc(r.requested_url)} => accepted ${r.accepted_count}/${r.link_count}, logged_out=${r.logged_out}`).join('<br>');
           body = `${p.board}: accepted ${p.accepted_count}/${p.link_count}, logged_out=${p.logged_out}, unsupported=${p.unsupported_browser}<br>${reports}<br>${esc(short(p.body_excerpt, 240))}`;
-        } else {
+        } else if (e.event !== 'post_failed') {
           body = esc(body);
         }
         return `<div class="event"><b>${esc(e.event)}</b><br>${body}</div>`;

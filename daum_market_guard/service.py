@@ -56,7 +56,19 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
                             "url": ref.url,
                         },
                     )
-                    detail = scraper.collect_post_detail(ref)
+                    try:
+                        detail = scraper.collect_post_detail(ref)
+                    except Exception as exc:
+                        _emit(
+                            progress,
+                            "post_failed",
+                            {
+                                "title": ref.title,
+                                "url": ref.url,
+                                "error": str(exc),
+                            },
+                        )
+                        continue
                     stats.post_details += 1
                     post_id = db.upsert_post(detail)
                     stored_images = _store_images(config, db, scraper, post_id, detail, progress)
