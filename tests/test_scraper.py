@@ -44,6 +44,22 @@ class ScraperTests(unittest.TestCase):
         self.assertIsNotNone(ref)
         self.assertEqual(ref.post_key, "C3Zg:123")
 
+    def test_accepts_current_board_legacy_datanum_links(self) -> None:
+        scraper = DaumCafeScraper(AppConfig())
+        board = BoardConfig("Market C3Zg", "https://cafe.daum.net/730418/C3Zg")
+        ref = scraper._link_to_post_ref(
+            board,
+            {
+                "text": "?먮ℓ湲",
+                "href": (
+                    "https://cafe.daum.net/_c21_/bbs_read?"
+                    "grpid=1R9cj&fldid=C3Zg&datanum=789"
+                ),
+            },
+        )
+        self.assertIsNotNone(ref)
+        self.assertEqual(ref.post_key, "C3Zg:789")
+
     def test_rejects_notice_titles(self) -> None:
         scraper = DaumCafeScraper(AppConfig())
         board = BoardConfig("Market C3Zg", "https://cafe.daum.net/730418/C3Zg")

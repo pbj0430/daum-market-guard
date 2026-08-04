@@ -19,8 +19,9 @@ else:
 
 POST_ID_PATTERNS = [
     re.compile(r"/(?P<board>[A-Za-z0-9]+)/(?P<id>\d+)(?:[/?#]|$)"),
-    re.compile(r"[?&](?:dataid|articleid|bbsid)=(?P<id>\d+)"),
+    re.compile(r"[?&](?:dataid|datanum|articleid|bbsid)=(?P<id>\d+)"),
 ]
+POST_ID_QUERY_KEYS = ("dataid", "datanum", "articleid", "bbsid")
 ARTICLE_FUNC_PATTERNS = [
     re.compile(r"['\"](?P<board>[A-Za-z0-9]+)['\"]\s*,\s*['\"]?(?P<id>\d+)['\"]?"),
     re.compile(r"(?P<board>[A-Za-z0-9]+)\D{0,20}(?P<id>\d{2,})"),
@@ -125,21 +126,45 @@ class DaumCafeScraper:
             raise RuntimeError("Login did not complete. Check config [login] or log in manually.")
         self.context.storage_state(path=str(self.config.data_dir / "storage-state.json"))
 
-    def collect_board_posts(self, board: BoardConfig) -> list[PostRef]:
+    def collect_board_posts(self, board: BoardConfig, progress: Any | None = None) -> list[PostRef]:
         refs: dict[str, PostRef] = {}
         for page_no in range(1, self.config.max_pages_per_board + 1):
             for url in self._board_page_urls(board, page_no):
                 page = self.page()
+                _emit(progress, "board_page_opening", {"board": board.name, "page": page_no, "url": url})
                 self._goto_with_login(page, url)
                 if self._looks_unsupported_browser(page):
                     raise RuntimeError(
                         "Daum returned the unsupported-browser page. "
                         "Run scan from VNC GUI or update Chromium."
                     )
-                for link in self._extract_links_from_page_and_frames(page):
+                links = self._extract_links_from_page_and_frames(page)
+                page_refs = []
+                for link in links:
                     ref = self._link_to_post_ref(board, link)
                     if ref is not None:
-                        refs.setdefault(ref.post_key, ref)
+                        page_refs.append(ref)
+                _emit(
+                    progress,
+                    "board_page_loaded",
+                    {
+                        "board": board.name,
+                        "page": page_no,
+                        "requested_url": url,
+                        "page_url": page.url,
+                        "title": _safe_title(page),
+                        "frame_count": len(page.frames),
+                        "link_count": len(links),
+                        "accepted_count": len(page_refs),
+                        "accepted_samples": [
+                            {"title": ref.title, "url": ref.url, "post_key": ref.post_key}
+                            for ref in page_refs[:5]
+                        ],
+                        "article_link_samples": _article_link_samples(links),
+                    },
+                )
+                for ref in page_refs:
+                    refs.setdefault(ref.post_key, ref)
                     if len(refs) >= self.config.max_posts_per_board_page * page_no:
                         break
                 if refs:
@@ -443,7 +468,7 @@ class DaumCafeScraper:
         if href and not href.lower().startswith("javascript:"):
             return href
         query = parse_qs(raw.replace("&amp;", "&"))
-        dataid = _first_query(query, "dataid", "articleid", "bbsid")
+        dataid = _first_query(query, *POST_ID_QUERY_KEYS)
         fldid = _first_query(query, "fldid", "board", "folderid")
         if dataid and (fldid in (None, board.board_id)):
             return f"https://cafe.daum.net/_c21_/bbs_read?fldid={board.board_id}&dataid={dataid}"
@@ -466,7 +491,7 @@ class DaumCafeScraper:
         fldid = _first_query(query, "fldid", "board", "folderid")
         if fldid and fldid != board.board_id:
             return None
-        for key in ("dataid", "articleid", "bbsid"):
+        for key in POST_ID_QUERY_KEYS:
             if query.get(key):
                 return f"{board.board_id}:{query[key][0]}"
         if (
@@ -726,3 +751,31 @@ def _safe_title(page: Page) -> str:
         return page.title()
     except Exception:
         return ""
+
+
+def _emit(progress: Any | None, event: str, payload: dict[str, Any]) -> None:
+    if progress is not None:
+        progress(event, payload)
+
+
+def _article_link_samples(links: list[dict[str, str]]) -> list[dict[str, str]]:
+    samples = []
+    for link in links:
+        href = str(link.get("href") or link.get("rawHref") or link.get("dataHref") or "")
+        onclick = str(link.get("onclick") or "")
+        raw = f"{href} {onclick}".lower()
+        if not any(
+            token in raw
+            for token in ("bbs_read", "dataid", "datanum", "articleid", "bbsid", "goarticle")
+        ):
+            continue
+        samples.append(
+            {
+                "text": _clean_text(str(link.get("text") or "")),
+                "href": href,
+                "onclick": onclick,
+            }
+        )
+        if len(samples) >= 10:
+            break
+    return samples

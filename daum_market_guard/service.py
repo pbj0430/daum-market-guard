@@ -47,7 +47,7 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
             for board in config.boards:
                 stats.board_count += 1
                 _emit(progress, "board_started", {"board": board.name, "url": board.url})
-                refs = scraper.collect_board_posts(board)
+                refs = scraper.collect_board_posts(board, progress=progress)
                 stats.post_refs += len(refs)
                 _emit(
                     progress,
@@ -212,6 +212,35 @@ def _print_progress(event: str, payload: dict[str, Any]) -> None:
         )
     elif event == "board_started":
         print(f"[scan] board: {payload['board']} url={payload['url']}", flush=True)
+    elif event == "board_page_opening":
+        print(
+            f"[scan]   opening page {payload['page']}: {payload['url']}",
+            flush=True,
+        )
+    elif event == "board_page_loaded":
+        print(
+            "[scan]   loaded: "
+            f"final={payload['page_url']} frames={payload['frame_count']} "
+            f"links={payload['link_count']} accepted={payload['accepted_count']} "
+            f"title={_short(payload['title'], 80)}",
+            flush=True,
+        )
+        for sample in payload.get("accepted_samples", [])[:5]:
+            print(
+                "[scan]     latest candidate: "
+                f"{sample.get('post_key')} title={_short(sample.get('title'), 80)} "
+                f"url={sample.get('url')}",
+                flush=True,
+            )
+        if not payload.get("accepted_samples"):
+            for sample in payload.get("article_link_samples", [])[:5]:
+                print(
+                    "[scan]     article-like link: "
+                    f"text={_short(sample.get('text'), 80)} "
+                    f"href={_short(sample.get('href'), 160)} "
+                    f"onclick={_short(sample.get('onclick'), 120)}",
+                    flush=True,
+                )
     elif event == "board_posts_found":
         print(f"[scan] posts found: {payload['board']} count={payload['count']}", flush=True)
     elif event == "board_debug":
