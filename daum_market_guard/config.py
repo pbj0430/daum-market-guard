@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 import tomllib
 
 
@@ -22,12 +22,19 @@ class BoardConfig:
 
     @property
     def cafe_id(self) -> str:
-        path = urlparse(self.url).path.strip("/").split("/")
+        parsed = urlparse(self.url)
+        path = parsed.path.strip("/").split("/")
+        if path[:1] == ["_c21_"]:
+            return parse_qs(parsed.query).get("grpid", [""])[0]
         return path[0] if path else ""
 
     @property
     def board_id(self) -> str:
-        path = urlparse(self.url).path.strip("/").split("/")
+        parsed = urlparse(self.url)
+        fldid = parse_qs(parsed.query).get("fldid", [""])[0]
+        if fldid:
+            return fldid
+        path = parsed.path.strip("/").split("/")
         return path[-1] if path else self.name
 
 
@@ -80,6 +87,7 @@ class SelectorConfig:
 @dataclass(frozen=True)
 class AppConfig:
     cafe_url: str = "https://cafe.daum.net/730418"
+    cafe_grpid: str = "1R9cj"
     login_url: str = "https://accounts.kakao.com/login/"
     data_dir: Path = Path("data")
     user_data_dir: Path = Path("browser-profile")
@@ -172,6 +180,7 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
 
     return AppConfig(
         cafe_url=str(data.get("cafe_url", "https://cafe.daum.net/730418")),
+        cafe_grpid=str(data.get("cafe_grpid", "1R9cj")),
         login_url=str(data.get("login_url", "https://accounts.kakao.com/login/")),
         data_dir=_path(data.get("data_dir", "data"), base_dir),
         user_data_dir=_path(data.get("user_data_dir", "browser-profile"), base_dir),

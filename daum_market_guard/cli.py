@@ -185,6 +185,7 @@ def _blacklist(config, args) -> None:
 def _replace_headless(config, headless: bool):
     return type(config)(
         cafe_url=config.cafe_url,
+        cafe_grpid=config.cafe_grpid,
         login_url=config.login_url,
         data_dir=config.data_dir,
         user_data_dir=config.user_data_dir,
@@ -217,6 +218,7 @@ def _replace_comment_min_score(config, min_score: int):
     )
     return type(config)(
         cafe_url=config.cafe_url,
+        cafe_grpid=config.cafe_grpid,
         login_url=config.login_url,
         data_dir=config.data_dir,
         user_data_dir=config.user_data_dir,

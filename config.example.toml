@@ -1,4 +1,5 @@
 cafe_url = "https://cafe.daum.net/730418"
+cafe_grpid = "1R9cj"
 login_url = "https://accounts.kakao.com/login/"
 data_dir = "data"
 poll_interval_seconds = 300

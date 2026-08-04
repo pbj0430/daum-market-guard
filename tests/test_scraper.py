@@ -75,7 +75,10 @@ class ScraperTests(unittest.TestCase):
         scraper = DaumCafeScraper(AppConfig())
         board = BoardConfig("Market C3Zg", "https://cafe.daum.net/730418/C3Zg")
         urls = scraper._board_page_urls(board, 1)
-        self.assertEqual(urls, ["https://cafe.daum.net/730418/C3Zg"])
+        self.assertEqual(
+            urls,
+            ["https://cafe.daum.net/_c21_/bbs_list?grpid=1R9cj&fldid=C3Zg"],
+        )
 
     def test_board_page_urls_include_mobile_fallback_when_enabled(self) -> None:
         scraper = DaumCafeScraper(AppConfig(allow_mobile_fallback=True))
@@ -84,7 +87,7 @@ class ScraperTests(unittest.TestCase):
         self.assertEqual(
             urls,
             [
-                "https://cafe.daum.net/730418/C3Zg",
+                "https://cafe.daum.net/_c21_/bbs_list?grpid=1R9cj&fldid=C3Zg",
                 "https://m.cafe.daum.net/730418/C3Zg",
             ],
         )
@@ -93,7 +96,18 @@ class ScraperTests(unittest.TestCase):
         scraper = DaumCafeScraper(AppConfig())
         board = BoardConfig("Market C3Zg", "https://m.cafe.daum.net/730418/C3Zg")
         urls = scraper._board_page_urls(board, 1)
-        self.assertEqual(urls, ["https://cafe.daum.net/730418/C3Zg"])
+        self.assertEqual(
+            urls,
+            ["https://cafe.daum.net/_c21_/bbs_list?grpid=1R9cj&fldid=C3Zg"],
+        )
+
+    def test_legacy_board_url_parses_board_id_from_query(self) -> None:
+        board = BoardConfig(
+            "Market C3Zg",
+            "https://cafe.daum.net/_c21_/bbs_list?grpid=1R9cj&fldid=C3Zg",
+        )
+        self.assertEqual(board.cafe_id, "1R9cj")
+        self.assertEqual(board.board_id, "C3Zg")
 
 
 if __name__ == "__main__":

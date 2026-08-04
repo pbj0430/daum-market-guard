@@ -354,6 +354,7 @@ def _loads(value: str | None) -> list[Any]:
 def _replace_headless(config: AppConfig, headless: bool) -> AppConfig:
     return type(config)(
         cafe_url=config.cafe_url,
+        cafe_grpid=config.cafe_grpid,
         login_url=config.login_url,
         data_dir=config.data_dir,
         user_data_dir=config.user_data_dir,

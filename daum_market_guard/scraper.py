@@ -327,7 +327,7 @@ class DaumCafeScraper:
         return f"{board_url}{sep}page={page_no}"
 
     def _board_page_urls(self, board: BoardConfig, page_no: int) -> list[str]:
-        urls = [self._board_page_url(self._desktop_url(board.url), page_no)]
+        urls = [self._pc_board_page_url(board, page_no)]
         if not self.config.allow_mobile_fallback:
             return urls
         mobile = f"https://m.cafe.daum.net/{board.cafe_id}/{board.board_id}"
@@ -336,6 +336,18 @@ class DaumCafeScraper:
         if mobile not in urls:
             urls.append(mobile)
         return urls
+
+    def _pc_board_page_url(self, board: BoardConfig, page_no: int) -> str:
+        parsed = urlparse(board.url)
+        query = parse_qs(parsed.query)
+        grpid = _first_query(query, "grpid") or self.config.cafe_grpid
+        fldid = _first_query(query, "fldid") or board.board_id
+        if grpid and fldid:
+            url = f"https://cafe.daum.net/_c21_/bbs_list?grpid={grpid}&fldid={fldid}"
+            if page_no > 1:
+                url = f"{url}&page={page_no}"
+            return url
+        return self._board_page_url(self._desktop_url(board.url), page_no)
 
     def _desktop_url(self, url: str) -> str:
         parsed = urlparse(url)
@@ -546,6 +558,11 @@ class DaumCafeScraper:
         url = page.url.lower()
         if "accounts.kakao.com" in url or "login" in url:
             return True
+        loginout_state = self._loginout_state(page)
+        if loginout_state == "logged_in":
+            return False
+        if loginout_state == "logged_out":
+            return True
         try:
             if page.locator(self.config.login.password_selector).first.is_visible(timeout=500):
                 return True
@@ -562,6 +579,32 @@ class DaumCafeScraper:
         if "로그아웃" in loginout:
             return False
         return "로그인" in text and "카카오" in text and "비밀번호" in text
+
+    def _loginout_state(self, page: Page) -> str:
+        script = """
+            () => {
+                const el = document.querySelector('#loginout');
+                if (!el) return '';
+                const link = el.closest('a');
+                const onclick = link ? (link.getAttribute('onclick') || '') : '';
+                const text = el.innerText || el.textContent || '';
+                return `${onclick} ${text}`;
+            }
+        """
+        for frame in page.frames:
+            try:
+                signal = str(frame.evaluate(script) or "").lower()
+            except Exception:
+                continue
+            if "logout(" in signal:
+                return "logged_in"
+            if "login(" in signal:
+                return "logged_out"
+            if "로그아웃" in signal:
+                return "logged_in"
+            if "로그인" in signal:
+                return "logged_out"
+        return ""
 
     def _is_login_page(self, page: Page) -> bool:
         url = page.url.lower()
@@ -587,6 +630,8 @@ class DaumCafeScraper:
         candidates = [
             "a:has-text('로그인')",
             "button:has-text('로그인')",
+            "a[onclick*='login']",
+            "button[onclick*='login']",
             "a[href*='login']",
             "a[href*='accounts.kakao.com']",
             "a[href*='logins.daum.net']",
