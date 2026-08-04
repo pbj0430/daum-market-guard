@@ -149,6 +149,13 @@ class Database:
         ).fetchone()
         return row is not None
 
+    def post_key_exists(self, post_key: str) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM posts WHERE post_key = ?",
+            (post_key,),
+        ).fetchone()
+        return row is not None
+
     def add_image(
         self,
         post_id: int,

@@ -103,6 +103,7 @@ class AppConfig:
     browser_executable_path: str | None = None
     max_pages_per_board: int = 1
     max_posts_per_board_page: int = 40
+    rescan_existing_posts: bool = False
     image_timeout_seconds: int = 20
     duplicate_hamming_threshold: int = 8
     blacklist_score_threshold: int = 90
@@ -193,6 +194,7 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
         browser_executable_path=_optional_str(data.get("browser_executable_path")),
         max_pages_per_board=int(data.get("max_pages_per_board", 1)),
         max_posts_per_board_page=int(data.get("max_posts_per_board_page", 40)),
+        rescan_existing_posts=bool(data.get("rescan_existing_posts", False)),
         image_timeout_seconds=int(data.get("image_timeout_seconds", 20)),
         duplicate_hamming_threshold=int(data.get("duplicate_hamming_threshold", 8)),
         blacklist_score_threshold=int(data.get("blacklist_score_threshold", 90)),

@@ -23,6 +23,8 @@ class DetectorTests(unittest.TestCase):
             db = Database(Path(directory) / "test.sqlite3")
             try:
                 old_id = db.upsert_post(_detail("C3Zg", 1, "old"))
+                self.assertTrue(db.post_key_exists("C3Zg:1"))
+                self.assertFalse(db.post_key_exists("C3Zg:404"))
                 db.add_image(old_id, "old.jpg", "", "same", "0" * 16, "0" * 16, 640, 480)
                 new_id = db.upsert_post(_detail("C3Zg", 2, "new"))
                 db.add_image(new_id, "new.jpg", "", "same", "0" * 16, "0" * 16, 640, 480)

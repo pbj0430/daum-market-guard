@@ -367,6 +367,7 @@ def _replace_headless(config: AppConfig, headless: bool) -> AppConfig:
         browser_executable_path=config.browser_executable_path,
         max_pages_per_board=config.max_pages_per_board,
         max_posts_per_board_page=config.max_posts_per_board_page,
+        rescan_existing_posts=config.rescan_existing_posts,
         image_timeout_seconds=config.image_timeout_seconds,
         duplicate_hamming_threshold=config.duplicate_hamming_threshold,
         blacklist_score_threshold=config.blacklist_score_threshold,

@@ -75,6 +75,19 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
                             "url": ref.url,
                         },
                     )
+                    if not config.rescan_existing_posts and db.post_key_exists(ref.post_key):
+                        _emit(
+                            progress,
+                            "post_skipped",
+                            {
+                                "board": board.name,
+                                "index": index,
+                                "total": len(refs),
+                                "post_key": ref.post_key,
+                                "title": ref.title,
+                            },
+                        )
+                        continue
                     try:
                         detail = scraper.collect_post_detail(ref)
                     except Exception as exc:
@@ -253,6 +266,12 @@ def _print_progress(event: str, payload: dict[str, Any]) -> None:
     elif event == "post_started":
         print(
             f"[scan] post {payload['index']}/{payload['total']}: {payload['title']}",
+            flush=True,
+        )
+    elif event == "post_skipped":
+        print(
+            f"[scan] skipped existing {payload['index']}/{payload['total']}: "
+            f"{payload['post_key']} {payload['title']}",
             flush=True,
         )
     elif event == "post_done":
