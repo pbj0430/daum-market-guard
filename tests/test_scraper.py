@@ -43,6 +43,27 @@ class ScraperTests(unittest.TestCase):
         self.assertIsNotNone(ref)
         self.assertEqual(ref.post_key, "C3Zg:123")
 
+    def test_accepts_javascript_article_links(self) -> None:
+        scraper = DaumCafeScraper(AppConfig())
+        board = BoardConfig("Market C3Zg", "https://cafe.daum.net/730418/C3Zg")
+        ref = scraper._link_to_post_ref(
+            board,
+            {
+                "text": "판매글",
+                "href": "javascript:;",
+                "onclick": "goArticle('C3Zg', '456')",
+            },
+        )
+        self.assertIsNotNone(ref)
+        self.assertEqual(ref.post_key, "C3Zg:456")
+
+    def test_board_page_urls_include_mobile_fallback(self) -> None:
+        scraper = DaumCafeScraper(AppConfig())
+        board = BoardConfig("Market C3Zg", "https://cafe.daum.net/730418/C3Zg")
+        urls = scraper._board_page_urls(board, 1)
+        self.assertIn("https://cafe.daum.net/730418/C3Zg", urls)
+        self.assertIn("https://m.cafe.daum.net/730418/C3Zg", urls)
+
 
 if __name__ == "__main__":
     unittest.main()

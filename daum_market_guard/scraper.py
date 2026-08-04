@@ -21,6 +21,10 @@ POST_ID_PATTERNS = [
     re.compile(r"/(?P<board>[A-Za-z0-9]+)/(?P<id>\d+)(?:[/?#]|$)"),
     re.compile(r"[?&](?:dataid|articleid|bbsid)=(?P<id>\d+)"),
 ]
+ARTICLE_FUNC_PATTERNS = [
+    re.compile(r"['\"](?P<board>[A-Za-z0-9]+)['\"]\s*,\s*['\"]?(?P<id>\d+)['\"]?"),
+    re.compile(r"(?P<board>[A-Za-z0-9]+)\D{0,20}(?P<id>\d{2,})"),
+]
 
 
 @dataclass
@@ -108,24 +112,68 @@ class DaumCafeScraper:
     def collect_board_posts(self, board: BoardConfig) -> list[PostRef]:
         refs: dict[str, PostRef] = {}
         for page_no in range(1, self.config.max_pages_per_board + 1):
-            url = self._board_page_url(board.url, page_no)
+            for url in self._board_page_urls(board, page_no):
+                page = self.page()
+                page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+                page.wait_for_timeout(1500)
+                if self._looks_logged_out(page):
+                    raise RuntimeError("Login is required. Run the login command first.")
+                if self._looks_unsupported_browser(page):
+                    raise RuntimeError(
+                        "Daum returned the unsupported-browser page. "
+                        "Run scan from VNC GUI or update Chromium."
+                    )
+                for link in self._extract_links_from_page_and_frames(page):
+                    ref = self._link_to_post_ref(board, link)
+                    if ref is not None:
+                        refs.setdefault(ref.post_key, ref)
+                    if len(refs) >= self.config.max_posts_per_board_page * page_no:
+                        break
+                if refs:
+                    break
+        return list(refs.values())
+
+    def inspect_board(self, board: BoardConfig) -> dict[str, Any]:
+        reports = []
+        for url in self._board_page_urls(board, 1):
             page = self.page()
             page.goto(url, wait_until="domcontentloaded", timeout=60_000)
             page.wait_for_timeout(1500)
-            if self._looks_logged_out(page):
-                raise RuntimeError("Login is required. Run the login command first.")
-            if self._looks_unsupported_browser(page):
-                raise RuntimeError(
-                    "Daum returned the unsupported-browser page. "
-                    "Run scan from VNC GUI or update Chromium."
-                )
-            for link in self._extract_links_from_page_and_frames(page):
-                ref = self._link_to_post_ref(board, link)
-                if ref is not None:
-                    refs.setdefault(ref.post_key, ref)
-                if len(refs) >= self.config.max_posts_per_board_page * page_no:
-                    break
-        return list(refs.values())
+            links = self._extract_links_from_page_and_frames(page)
+            accepted = [self._link_to_post_ref(board, link) for link in links]
+            accepted = [ref for ref in accepted if ref is not None]
+            try:
+                body_text = _clean_text(page.locator("body").inner_text(timeout=1000))
+            except Exception:
+                body_text = ""
+            reports.append(
+                {
+                    "requested_url": url,
+                    "page_url": page.url,
+                    "title": _safe_title(page),
+                    "frame_count": len(page.frames),
+                    "link_count": len(links),
+                    "accepted_count": len(accepted),
+                    "logged_out": self._looks_logged_out(page),
+                    "unsupported_browser": self._looks_unsupported_browser(page),
+                    "body_excerpt": body_text[:700],
+                    "accepted_samples": [
+                        {"title": ref.title, "url": ref.url, "post_key": ref.post_key}
+                        for ref in accepted[:10]
+                    ],
+                    "link_samples": links[:20],
+                }
+            )
+        return {
+            "board": board.name,
+            "board_url": board.url,
+            "url_reports": reports,
+            "link_count": sum(report["link_count"] for report in reports),
+            "accepted_count": sum(report["accepted_count"] for report in reports),
+            "logged_out": any(report["logged_out"] for report in reports),
+            "unsupported_browser": any(report["unsupported_browser"] for report in reports),
+            "body_excerpt": reports[0]["body_excerpt"] if reports else "",
+        }
 
     def collect_post_detail(self, ref: PostRef) -> PostDetail:
         page = self.page()
@@ -191,12 +239,24 @@ class DaumCafeScraper:
         sep = "&" if "?" in board_url else "?"
         return f"{board_url}{sep}page={page_no}"
 
+    def _board_page_urls(self, board: BoardConfig, page_no: int) -> list[str]:
+        urls = [self._board_page_url(board.url, page_no)]
+        mobile = f"https://m.cafe.daum.net/{board.cafe_id}/{board.board_id}"
+        if page_no > 1:
+            mobile = f"{mobile}?page={page_no}"
+        if mobile not in urls:
+            urls.append(mobile)
+        return urls
+
     def _extract_links_from_page_and_frames(self, page: Page) -> list[dict[str, str]]:
         links: list[dict[str, str]] = []
         script = """
             () => Array.from(document.querySelectorAll('a')).map((a) => ({
                 text: (a.innerText || a.textContent || '').trim(),
-                href: a.href || ''
+                href: a.href || '',
+                rawHref: a.getAttribute('href') || '',
+                onclick: a.getAttribute('onclick') || '',
+                dataHref: a.dataset ? (a.dataset.href || a.dataset.url || a.dataset.link || '') : ''
             }))
         """
         for frame in page.frames:
@@ -232,7 +292,7 @@ class DaumCafeScraper:
         return list(found.values())
 
     def _link_to_post_ref(self, board: BoardConfig, link: dict[str, str]) -> PostRef | None:
-        href = str(link.get("href") or "")
+        href = self._normalize_link_href(board, link)
         title = _clean_text(str(link.get("text") or ""))
         if not href or len(title) < 2:
             return None
@@ -253,6 +313,31 @@ class DaumCafeScraper:
         if post_key == board.board_id:
             return None
         return PostRef(board_id=board.board_id, url=href, title=title, post_key=post_key)
+
+    def _normalize_link_href(self, board: BoardConfig, link: dict[str, str]) -> str:
+        href = str(link.get("href") or link.get("rawHref") or link.get("dataHref") or "")
+        raw = " ".join(
+            str(link.get(key) or "")
+            for key in ("href", "rawHref", "dataHref", "onclick")
+        )
+        if href and not href.lower().startswith("javascript:"):
+            return href
+        query = parse_qs(raw.replace("&amp;", "&"))
+        dataid = _first_query(query, "dataid", "articleid", "bbsid")
+        fldid = _first_query(query, "fldid", "board", "folderid")
+        if dataid and (fldid in (None, board.board_id)):
+            return f"https://cafe.daum.net/_c21_/bbs_read?fldid={board.board_id}&dataid={dataid}"
+        for pattern in ARTICLE_FUNC_PATTERNS:
+            match = pattern.search(raw)
+            if not match:
+                continue
+            if match.groupdict().get("board") != board.board_id:
+                continue
+            return (
+                "https://cafe.daum.net/_c21_/bbs_read"
+                f"?fldid={board.board_id}&dataid={match.group('id')}"
+            )
+        return href
 
     def _post_key(self, board: BoardConfig, href: str) -> str | None:
         parsed = urlparse(href)
@@ -432,3 +517,10 @@ def find_system_chromium() -> str | None:
         if path:
             return path
     return None
+
+
+def _safe_title(page: Page) -> str:
+    try:
+        return page.title()
+    except Exception:
+        return ""

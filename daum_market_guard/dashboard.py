@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .config import AppConfig
 from .db import Database
+from .scraper import DaumCafeScraper
 from .service import run_once
 
 
@@ -22,6 +23,7 @@ class DashboardState:
         self.last_error = ""
         self.last_result: dict[str, Any] | None = None
         self.events: list[dict[str, Any]] = []
+        self.login_scraper: DaumCafeScraper | None = None
 
     def add_event(self, event: str, payload: dict[str, Any]) -> None:
         item = {
@@ -39,6 +41,7 @@ class DashboardState:
                 "running": self.running,
                 "last_error": self.last_error,
                 "last_result": self.last_result,
+                "login_browser_open": self.login_scraper is not None,
                 "events": list(reversed(self.events[-80:])),
             }
 
@@ -87,6 +90,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/scan/start":
             self._start_scan()
+            return
+        if parsed.path == "/api/login/open":
+            self._open_login_browser()
+            return
+        if parsed.path == "/api/login/close":
+            self._close_login_browser()
+            return
+        if parsed.path == "/api/debug/boards":
+            self._debug_boards()
             return
         self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -163,11 +175,77 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if self.dashboard_state.running:
                 self._send_json({"started": False, "message": "scan already running"})
                 return
+            if self.dashboard_state.login_scraper is not None:
+                self._send_json(
+                    {
+                        "started": False,
+                        "message": "close the login browser before scanning",
+                    }
+                )
+                self.dashboard_state.add_event(
+                    "scan_blocked",
+                    {"message": "Close Login Browser first, then scan."},
+                )
+                return
             self.dashboard_state.running = True
             self.dashboard_state.last_error = ""
 
         thread = threading.Thread(target=self._scan_worker, daemon=True)
         thread.start()
+        self._send_json({"started": True})
+
+    def _open_login_browser(self) -> None:
+        with self.dashboard_state.lock:
+            if self.dashboard_state.login_scraper is not None:
+                self._send_json({"opened": False, "message": "login browser already open"})
+                return
+            scraper = DaumCafeScraper(_replace_headless(self.app_config, False))
+            self.dashboard_state.login_scraper = scraper
+        try:
+            scraper.start()
+            page = scraper.page()
+            page.goto(self.app_config.cafe_url, wait_until="domcontentloaded", timeout=60_000)
+            page.wait_for_timeout(1000)
+            self.dashboard_state.add_event(
+                "login_browser_opened",
+                {"url": page.url, "message": "Log in there, then click Close Login Browser."},
+            )
+            self._send_json({"opened": True, "url": page.url})
+        except Exception as exc:
+            with self.dashboard_state.lock:
+                self.dashboard_state.login_scraper = None
+            try:
+                scraper.close()
+            except Exception:
+                pass
+            self.dashboard_state.add_event("login_browser_failed", {"error": str(exc)})
+            self._send_json({"opened": False, "error": str(exc)})
+
+    def _close_login_browser(self) -> None:
+        with self.dashboard_state.lock:
+            scraper = self.dashboard_state.login_scraper
+            self.dashboard_state.login_scraper = None
+        if scraper is not None:
+            scraper.close()
+        self.dashboard_state.add_event("login_browser_closed", {})
+        self._send_json({"closed": True})
+
+    def _debug_boards(self) -> None:
+        if self.dashboard_state.running:
+            self._send_json({"started": False, "message": "scan already running"})
+            return
+
+        def worker() -> None:
+            self.dashboard_state.add_event("debug_started", {})
+            try:
+                with DaumCafeScraper(_replace_headless(self.app_config, False)) as scraper:
+                    for board in self.app_config.boards:
+                        info = scraper.inspect_board(board)
+                        self.dashboard_state.add_event("debug_board", info)
+            except Exception as exc:
+                self.dashboard_state.add_event("debug_failed", {"error": str(exc)})
+
+        threading.Thread(target=worker, daemon=True).start()
         self._send_json({"started": True})
 
     def _scan_worker(self) -> None:
@@ -291,6 +369,8 @@ INDEX_HTML = r"""<!doctype html>
     header { height:56px; display:flex; align-items:center; justify-content:space-between; padding:0 18px; border-bottom:1px solid var(--line); background:#fff; position:sticky; top:0; z-index:2; }
     h1 { font-size:18px; margin:0; }
     button { border:1px solid #0b5d56; background:var(--brand); color:#fff; height:34px; padding:0 12px; border-radius:6px; cursor:pointer; font-weight:700; }
+    .ghost { background:#fff; color:#0f766e; }
+    .actions { display:flex; gap:8px; align-items:center; }
     button:disabled { opacity:.55; cursor:not-allowed; }
     main { display:grid; grid-template-columns: 360px 1fr; gap:16px; padding:16px; }
     section { background:#fff; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
@@ -320,7 +400,12 @@ INDEX_HTML = r"""<!doctype html>
 <body>
   <header>
     <h1>Daum Market Guard</h1>
-    <button id="scanBtn" onclick="startScan()">Scan</button>
+    <div class="actions">
+      <button class="ghost" onclick="openLogin()">Login</button>
+      <button class="ghost" onclick="closeLogin()">Close Login</button>
+      <button class="ghost" onclick="debugBoards()">Debug</button>
+      <button id="scanBtn" onclick="startScan()">Scan</button>
+    </div>
   </header>
   <main>
     <aside>
@@ -347,6 +432,9 @@ INDEX_HTML = r"""<!doctype html>
     const short = (v, n) => String(v ?? '').length > n ? String(v).slice(0, n) + '...' : String(v ?? '');
     async function getJson(url, options) { const r = await fetch(url, options); return await r.json(); }
     async function startScan() { await getJson('/api/scan/start', {method:'POST'}); refresh(); }
+    async function openLogin() { await getJson('/api/login/open', {method:'POST'}); refresh(); }
+    async function closeLogin() { await getJson('/api/login/close', {method:'POST'}); refresh(); }
+    async function debugBoards() { await getJson('/api/debug/boards', {method:'POST'}); refresh(); }
     function scoreClass(score) { return score >= 85 ? 'bad' : score >= 60 ? 'warn' : ''; }
     async function refresh() {
       const status = await getJson('/api/status');
@@ -358,7 +446,14 @@ INDEX_HTML = r"""<!doctype html>
       ].map(([k,v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
       document.getElementById('events').innerHTML = (status.events || []).map(e => {
         const p = e.payload || {};
-        return `<div class="event"><b>${esc(e.event)}</b><br>${esc(p.title || p.board || p.error || JSON.stringify(p))}</div>`;
+        let body = p.title || p.board || p.error || p.message || JSON.stringify(p);
+        if (e.event === 'debug_board') {
+          const reports = (p.url_reports || []).map(r => `${esc(r.requested_url)} => accepted ${r.accepted_count}/${r.link_count}, logged_out=${r.logged_out}`).join('<br>');
+          body = `${p.board}: accepted ${p.accepted_count}/${p.link_count}, logged_out=${p.logged_out}, unsupported=${p.unsupported_browser}<br>${reports}<br>${esc(short(p.body_excerpt, 240))}`;
+        } else {
+          body = esc(body);
+        }
+        return `<div class="event"><b>${esc(e.event)}</b><br>${body}</div>`;
       }).join('');
       const posts = await getJson('/api/posts?limit=80');
       document.getElementById('posts').innerHTML = (posts.posts || []).map(p => {
