@@ -30,14 +30,15 @@ def assess_post(db: Database, post_id: int, hamming_threshold: int) -> Assessmen
                 continue
             matched_image_ids.add(int(image["id"]))
             matched_posts[prior.post_id] = prior.post_url
-            if _same_author(
+            author_relation = _author_relation(
                 str(post["author_name"]),
                 str(post["author_id"]),
                 prior.author_name,
                 prior.author_id,
-            ):
+            )
+            if author_relation == "same":
                 same_author_posts.add(prior.post_id)
-            else:
+            elif author_relation == "different":
                 different_author_posts.add(prior.post_id)
 
     duplicate_image_count = len(matched_image_ids)
@@ -104,15 +105,19 @@ def maybe_blacklist(db: Database, assessment: Assessment, threshold: int) -> Non
     )
 
 
-def _same_author(
+def _author_relation(
     current_name: str,
     current_id: str,
     prior_name: str,
     prior_id: str,
-) -> bool:
+) -> str:
     if current_id and prior_id and current_id == prior_id:
-        return True
-    return bool(current_name and prior_name and current_name == prior_name)
+        return "same"
+    if current_name and prior_name:
+        return "same" if current_name == prior_name else "different"
+    if current_id and prior_id:
+        return "different"
+    return "unknown"
 
 
 def _stable_links(links: object) -> list[str]:

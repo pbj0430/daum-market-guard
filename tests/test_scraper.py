@@ -10,6 +10,7 @@ from daum_market_guard.scraper import _looks_non_article_title
 from daum_market_guard.scraper import _post_key_from_url
 from daum_market_guard.scraper import _post_keys_from_text
 from daum_market_guard.scraper import _posted_at_from_article_sections
+from daum_market_guard.scraper import _title_from_content_text
 from daum_market_guard.scraper import _title_from_article_sections
 
 
@@ -93,6 +94,12 @@ class ScraperTests(unittest.TestCase):
         self.assertTrue(_looks_non_article_title("조회 205"))
         self.assertTrue(_looks_non_article_title("추천 0"))
         self.assertFalse(_looks_non_article_title("볼레로5 팝니다"))
+
+    def test_derives_title_from_content_when_article_title_is_missing(self) -> None:
+        self.assertEqual(
+            _title_from_content_text("기채 구합니다 사이즈 S 연락 주세요 010-5650-육공칠공"),
+            "기채 구합니다",
+        )
 
     def test_rejects_notice_titles(self) -> None:
         scraper = DaumCafeScraper(AppConfig())

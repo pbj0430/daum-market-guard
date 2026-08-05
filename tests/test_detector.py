@@ -72,6 +72,23 @@ class DetectorTests(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_unknown_authors_are_not_counted_as_different_authors(self) -> None:
+        with TemporaryDirectory() as directory:
+            db = Database(Path(directory) / "test.sqlite3")
+            try:
+                old_id = db.upsert_post(_detail("C3Zg", 1, ""))
+                db.add_image(old_id, "old.jpg", "", "same", "0" * 16, "0" * 16, 640, 480)
+                new_id = db.upsert_post(_detail("C3Zg", 2, ""))
+                db.add_image(new_id, "new.jpg", "", "same", "0" * 16, "0" * 16, 640, 480)
+
+                assessment = assess_post(db, new_id, 8)
+
+                self.assertEqual(assessment.duplicate_image_count, 1)
+                self.assertEqual(assessment.same_author_duplicate_count, 0)
+                self.assertEqual(assessment.different_author_duplicate_count, 0)
+            finally:
+                db.close()
+
 
 if __name__ == "__main__":
     unittest.main()

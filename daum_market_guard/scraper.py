@@ -268,16 +268,15 @@ class DaumCafeScraper:
             _title_from_article_sections(article_sections)
             or self._first_text(body_frames, ARTICLE_TITLE_SELECTORS)
         )
-        author = (
-            _author_from_article_sections(article_sections)
-            or self._first_text(body_frames, ARTICLE_AUTHOR_SELECTORS)
-        )
+        author = _author_from_article_sections(article_sections)
         posted_at = (
             _posted_at_from_article_sections(article_sections)
             or self._first_text(body_frames, ARTICLE_DATE_SELECTORS)
         )
         if _looks_cafe_page_title(title) or _looks_non_article_title(title):
             title = ref.title
+        if title == ref.title:
+            title = _title_from_content_text(content_text) or ref.title
         return PostDetail(
             ref=ref,
             title=title or ref.title,
@@ -845,6 +844,29 @@ def _posted_at_from_article_sections(sections: list[tuple[list[str], list[str]]]
             if match:
                 return match.group(0)
     return ""
+
+
+def _title_from_content_text(value: str) -> str:
+    lines = _text_lines(value)
+    if not lines:
+        return ""
+    first = _strip_contact_info(lines[0])
+    first = re.split(
+        r"\s+(?:\uc0ac\uc774\uc988|\uc5f0\ub77d|\uc804\ud654|\uac00\uaca9|\ud310\ub9e4\uae08\uc561|\ud310\ub9e4\ud76c\ub9dd\uac00|010[-\s]?\d)",
+        first,
+        maxsplit=1,
+    )[0]
+    first = re.split(r"[.!?。]", first, maxsplit=1)[0]
+    first = _clean_text(first)
+    if len(first) < 2 or _looks_non_article_title(first):
+        return ""
+    return first[:80]
+
+
+def _strip_contact_info(value: str) -> str:
+    text = re.sub(r"010[-\s]?\d{3,4}[-\s]?\d{4}", "", value)
+    text = re.sub(r"010[-\s]?[가-힣]{2,}", "", text)
+    return _clean_text(text)
 
 
 def _header_lines(body_lines: list[str], content_lines: list[str]) -> list[str]:
