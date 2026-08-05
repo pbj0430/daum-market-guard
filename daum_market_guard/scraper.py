@@ -31,6 +31,33 @@ BODY_SELECTORS = [
     ".board_post.tx-content-container",
     ".tx-content-container",
 ]
+ARTICLE_TITLE_SELECTORS = [
+    ".article_subject",
+    ".tit_subject",
+    ".tit_info",
+    ".tit_item",
+    "#articleTitle",
+    "h1",
+    "h2",
+    "h3",
+    ".tit_view",
+    ".subject",
+    "meta[property='og:title']",
+]
+ARTICLE_AUTHOR_SELECTORS = [
+    ".txt_writer",
+    ".txt_name",
+    ".nickname",
+    ".writer",
+    ".nick_name",
+    ".author",
+    ".info_author",
+    "[class*='writer']",
+    "[class*='nickname']",
+    "[class*='author']",
+]
+ARTICLE_DATE_SELECTORS = ["time", ".date", ".txt_date", "[class*='date']"]
+ARTICLE_DATE_PATTERN = re.compile(r"\d{2,4}\.\d{1,2}\.\d{1,2}(?:\s+\d{1,2}:\d{2})?")
 
 
 @dataclass
@@ -216,37 +243,24 @@ class DaumCafeScraper:
         page = self.page()
         self._goto_with_login(page, ref.url)
         body_frames = self._body_frames(page)
-        title = self._first_text(
-            body_frames,
-            [
-                ".article_subject",
-                ".tit_subject",
-                "#articleTitle",
-                "h1",
-                "h2",
-                "h3",
-                ".tit_view",
-                ".subject",
-                "meta[property='og:title']",
-            ],
-        )
-        author = self._first_text(
-            body_frames,
-            [
-                ".txt_writer",
-                ".nickname",
-                ".writer",
-                ".nick_name",
-                "[class*='writer']",
-                "[class*='nickname']",
-            ],
-        )
-        posted_at = self._first_text(body_frames, ["time", ".date", ".txt_date", "[class*='date']"])
         has_post_content = bool(body_frames)
         content_text = self._content_text(page)
         images = self._extract_images_from_page_and_frames(page)
         if not has_post_content:
             raise RuntimeError(f"Post not found or not a readable post: {ref.url}")
+        article_sections = self._article_text_sections(body_frames)
+        title = (
+            _title_from_article_sections(article_sections)
+            or self._first_text(body_frames, ARTICLE_TITLE_SELECTORS)
+        )
+        author = (
+            _author_from_article_sections(article_sections)
+            or self._first_text(body_frames, ARTICLE_AUTHOR_SELECTORS)
+        )
+        posted_at = (
+            _posted_at_from_article_sections(article_sections)
+            or self._first_text(body_frames, ARTICLE_DATE_SELECTORS)
+        )
         if _looks_cafe_page_title(title):
             title = ref.title
         return PostDetail(
@@ -270,6 +284,26 @@ class DaumCafeScraper:
                 except Exception:
                     continue
         return frames
+
+    def _article_text_sections(self, frames: list[Any]) -> list[tuple[list[str], list[str]]]:
+        sections: list[tuple[list[str], list[str]]] = []
+        for frame in frames:
+            try:
+                body_text = frame.locator("body").inner_text(timeout=1000)
+            except Exception:
+                body_text = ""
+            content_text = ""
+            for selector in BODY_SELECTORS:
+                try:
+                    locator = frame.locator(selector).first
+                    if locator.count() == 0:
+                        continue
+                    content_text = locator.inner_text(timeout=1000)
+                    break
+                except Exception:
+                    continue
+            sections.append((_text_lines(body_text), _text_lines(content_text)))
+        return sections
 
     def _goto_with_login(self, page: Page, url: str) -> None:
         target_url = self._desktop_url(url)
@@ -720,6 +754,114 @@ def _guess_suffix(image_url: str) -> str:
 
 def _clean_text(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
+
+
+def _text_lines(value: str) -> list[str]:
+    return [line for line in (_clean_text(line) for line in (value or "").splitlines()) if line]
+
+
+def _title_from_article_sections(sections: list[tuple[list[str], list[str]]]) -> str:
+    for body_lines, content_lines in sections:
+        title = _title_from_header_lines(_header_lines(body_lines, content_lines))
+        if title:
+            return title
+    return ""
+
+
+def _author_from_article_sections(sections: list[tuple[list[str], list[str]]]) -> str:
+    for body_lines, content_lines in sections:
+        author = _author_from_header_lines(_header_lines(body_lines, content_lines))
+        if author:
+            return author
+    return ""
+
+
+def _posted_at_from_article_sections(sections: list[tuple[list[str], list[str]]]) -> str:
+    for body_lines, content_lines in sections:
+        for line in _header_lines(body_lines, content_lines):
+            match = ARTICLE_DATE_PATTERN.search(line)
+            if match:
+                return match.group(0)
+    return ""
+
+
+def _header_lines(body_lines: list[str], content_lines: list[str]) -> list[str]:
+    first_content_line = next((line for line in content_lines if line), "")
+    if not first_content_line:
+        return body_lines[:20]
+    for index, line in enumerate(body_lines):
+        if _same_or_contained_line(line, first_content_line):
+            return body_lines[:index]
+    return body_lines[:20]
+
+
+def _same_or_contained_line(left: str, right: str) -> bool:
+    left = _clean_text(left)
+    right = _clean_text(right)
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    if min(len(left), len(right)) < 12:
+        return False
+    return left in right or right in left
+
+
+def _title_from_header_lines(lines: list[str]) -> str:
+    for index, line in enumerate(lines):
+        if _looks_author_meta_line(line):
+            for candidate in reversed(lines[:index]):
+                if not _is_article_header_noise(candidate):
+                    return candidate
+    candidates = [line for line in lines if not _is_article_header_noise(line)]
+    if len(candidates) >= 2 and _looks_category_line(candidates[0]):
+        return candidates[1]
+    return candidates[0] if candidates else ""
+
+
+def _author_from_header_lines(lines: list[str]) -> str:
+    for line in lines:
+        if not _looks_author_meta_line(line):
+            continue
+        author = line
+        for token in ("추천", "조회", "댓글"):
+            position = author.find(token)
+            if position > 0:
+                author = author[:position]
+                break
+        author = re.sub(r"^(작성자|글쓴이)\s*", "", author.strip())
+        author = _clean_text(author)
+        if author and not ARTICLE_DATE_PATTERN.search(author):
+            return author
+    return ""
+
+
+def _looks_author_meta_line(line: str) -> bool:
+    return bool(ARTICLE_DATE_PATTERN.search(line)) or ("추천" in line and "조회" in line)
+
+
+def _is_article_header_noise(line: str) -> bool:
+    text = _clean_text(line)
+    if len(text) < 2:
+        return True
+    if _looks_author_meta_line(text):
+        return True
+    if text in {"Daum", "카페", "메일", "댓글", "스크랩"}:
+        return True
+    if "Daum" in text and ("카페" in text or "Cafe" in text):
+        return True
+    if text.startswith(("http://", "https://")):
+        return True
+    return False
+
+
+def _looks_category_line(line: str) -> bool:
+    text = _clean_text(line)
+    return (
+        ("관련 중고" in text or text.startswith(("패러관련", "장비관련", "기타관련")))
+        and text.endswith(("삽니다", "팝니다", "판매"))
+        and len(text) <= 30
+    )
 
 
 def _is_notice_title(title: str) -> bool:

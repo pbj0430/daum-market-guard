@@ -4,7 +4,10 @@ from unittest.mock import patch
 from daum_market_guard.config import AppConfig, BoardConfig
 from daum_market_guard.scraper import find_system_chromium
 from daum_market_guard.scraper import DaumCafeScraper
+from daum_market_guard.scraper import _author_from_article_sections
 from daum_market_guard.scraper import _is_notice_title
+from daum_market_guard.scraper import _posted_at_from_article_sections
+from daum_market_guard.scraper import _title_from_article_sections
 
 
 class ScraperTests(unittest.TestCase):
@@ -145,6 +148,56 @@ class ScraperTests(unittest.TestCase):
                 "",
             )
         )
+
+    def test_extracts_title_author_and_date_from_article_header(self) -> None:
+        sections = [
+            (
+                [
+                    "패러관련 중고 삽니다",
+                    "포톤 MS 상태 좋은 장비 구합니다",
+                    "카우보이 추천 0 조회 137 26.05.25 20:16 댓글 0",
+                    "포톤 상태 좋은 MS (85-95) 구합니다",
+                    "01053075041",
+                ],
+                [
+                    "포톤 상태 좋은 MS (85-95) 구합니다",
+                    "01053075041",
+                ],
+            )
+        ]
+
+        self.assertEqual(_title_from_article_sections(sections), "포톤 MS 상태 좋은 장비 구합니다")
+        self.assertEqual(_author_from_article_sections(sections), "카우보이")
+        self.assertEqual(_posted_at_from_article_sections(sections), "26.05.25 20:16")
+
+    def test_extracts_header_metadata_for_each_article_independently(self) -> None:
+        first_sections = [
+            (
+                [
+                    "패러관련 중고 팝니다",
+                    "naviter oudie N 팝니다",
+                    "김정구 추천 0 조회 219 26.07.27 14:57 댓글 0",
+                    "4회 사용했습니다",
+                ],
+                ["4회 사용했습니다"],
+            )
+        ]
+        second_sections = [
+            (
+                [
+                    "패러관련 중고 팝니다",
+                    "독일 살리 비테스 헬멧 판매",
+                    "최홍삼 추천 0 조회 90 26.07.28 10:12 댓글 0",
+                    "미사용으로 판매합니다",
+                ],
+                ["미사용으로 판매합니다"],
+            )
+        ]
+
+        self.assertEqual(_title_from_article_sections(first_sections), "naviter oudie N 팝니다")
+        self.assertEqual(_author_from_article_sections(first_sections), "김정구")
+        self.assertEqual(_title_from_article_sections(second_sections), "독일 살리 비테스 헬멧 판매")
+        self.assertEqual(_author_from_article_sections(second_sections), "최홍삼")
 
 
 if __name__ == "__main__":
