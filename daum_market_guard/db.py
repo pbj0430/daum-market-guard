@@ -242,6 +242,7 @@ class Database:
             "assessments": "SELECT COUNT(*) FROM assessments",
             "suspects": "SELECT COUNT(*) FROM assessments WHERE score >= 70",
             "blacklist": "SELECT COUNT(*) FROM blacklist WHERE active = 1",
+            "missing": "SELECT COUNT(*) FROM missing_posts",
         }.items():
             values[key] = int(self.conn.execute(query).fetchone()[0])
         return values
