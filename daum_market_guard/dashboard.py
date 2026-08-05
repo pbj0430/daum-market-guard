@@ -505,9 +505,12 @@ INDEX_HTML = r"""<!doctype html>
       if (e.event === 'board_page_loaded') return `accepted ${p.accepted_count}/${p.link_count}, frames ${p.frame_count}, final ${p.page_url}`;
       if (e.event === 'board_posts_found') return `${p.board}: ${p.count} candidate numbers`;
       if (e.event === 'post_started') return `${p.index}/${p.total} ${p.post_key || '-'} ${p.title} | ${p.url}`;
+      if (e.event === 'post_timing') return `${p.post_key || '-'} ${p.phase}: ${p.elapsed_ms}ms ${timingExtra(p)}`;
       if (e.event === 'post_skipped') return `${p.index}/${p.total} ${p.post_key} ${p.title}`;
       if (e.event === 'post_missing') return `${p.index}/${p.total} ${p.post_key}`;
-      if (e.event === 'post_done') return `${p.post_key || '-'} score ${p.score}, images ${p.stored_images}, author ${p.author || '-'}, ${p.title || ''}`;
+      if (e.event === 'image_started') return `${p.post_key || '-'} image ${p.index}/${p.total} start`;
+      if (e.event === 'image_done') return `${p.post_key || '-'} image ${p.index}/${p.total} ${p.status}: total ${p.total_ms}ms, download ${p.download_ms || '-'}ms, hash ${p.fingerprint_ms || '-'}ms, file ${p.file_save_ms || '-'}ms, db ${p.db_add_ms || '-'}ms`;
+      if (e.event === 'post_done') return `${p.post_key || '-'} score ${p.score}, images ${p.stored_images}, elapsed ${p.elapsed_ms || '-'}ms, author ${p.author || '-'}, ${p.title || ''}`;
       if (e.event === 'post_failed') return `${p.title || ''} | ${p.error || ''} | ${p.url || ''}`;
       if (e.event === 'scan_done') return `boards ${p.boards}, refs ${p.refs}, posts ${p.posts}, images ${p.images}, assessed ${p.assessed}`;
       if (e.event === 'debug_board' || e.event === 'board_debug') {
@@ -516,9 +519,13 @@ INDEX_HTML = r"""<!doctype html>
       }
       return p.title || p.board || p.error || p.message || JSON.stringify(p);
     }
+    function timingExtra(p) {
+      const keys = ['frames','body_frames','chars','images','found','stored','score','detail_ms','db_ms','images_ms','assess_ms','assessment_save_ms','blacklist_ms','title','author','posted_at'];
+      return keys.filter(k => p[k] !== undefined && p[k] !== '').map(k => `${k}=${p[k]}`).join(' ');
+    }
     function currentLine(events, status) {
       if (status.running) {
-        const active = events.find(e => ['post_started','post_done','post_skipped','post_missing','direct_scan_range','board_started'].includes(e.event));
+        const active = events.find(e => ['post_timing','image_done','post_started','post_done','post_skipped','post_missing','direct_scan_range','board_started'].includes(e.event));
         return active ? `${active.event}: ${short(eventBody(active), 160)}` : 'Running';
       }
       if (status.last_error) return `Error: ${status.last_error}`;

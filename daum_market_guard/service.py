@@ -106,7 +106,11 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
                         },
                     )
                     try:
-                        detail = scraper.collect_post_detail(ref)
+                        post_started_at = time.monotonic()
+                        started = time.monotonic()
+                        detail = scraper.collect_post_detail(ref, progress=progress)
+                        detail_ms = _elapsed_ms(started)
+                        _emit_service_timing(progress, ref, "detail", detail_ms)
                     except Exception as exc:
                         if post_number is not None and _looks_missing_error(exc):
                             db.mark_missing_post(ref.board_id, post_number)
@@ -133,13 +137,49 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
                         )
                         continue
                     stats.post_details += 1
+                    started = time.monotonic()
                     post_id = db.upsert_post(detail)
+                    db_ms = _elapsed_ms(started)
+                    _emit_service_timing(progress, ref, "db_upsert", db_ms, {"post_id": post_id})
+                    started = time.monotonic()
                     stored_images = _store_images(config, db, scraper, post_id, detail, progress)
+                    images_ms = _elapsed_ms(started)
                     stats.images += stored_images
+                    _emit_service_timing(
+                        progress,
+                        ref,
+                        "images_total",
+                        images_ms,
+                        {"found": len(detail.images), "stored": stored_images},
+                    )
+                    started = time.monotonic()
                     assessment = assess_post(db, post_id, config.duplicate_hamming_threshold)
+                    assess_ms = _elapsed_ms(started)
+                    _emit_service_timing(progress, ref, "assess", assess_ms, {"score": assessment.score})
+                    started = time.monotonic()
                     db.save_assessment(assessment)
+                    assessment_save_ms = _elapsed_ms(started)
+                    _emit_service_timing(progress, ref, "assessment_save", assessment_save_ms)
+                    started = time.monotonic()
                     maybe_blacklist(db, assessment, config.blacklist_score_threshold)
+                    blacklist_ms = _elapsed_ms(started)
+                    _emit_service_timing(progress, ref, "blacklist", blacklist_ms)
                     assessed += 1
+                    post_total_ms = _elapsed_ms(post_started_at)
+                    _emit_service_timing(
+                        progress,
+                        ref,
+                        "post_total",
+                        post_total_ms,
+                        {
+                            "detail_ms": detail_ms,
+                            "db_ms": db_ms,
+                            "images_ms": images_ms,
+                            "assess_ms": assess_ms,
+                            "assessment_save_ms": assessment_save_ms,
+                            "blacklist_ms": blacklist_ms,
+                        },
+                    )
                     _emit(
                         progress,
                         "post_done",
@@ -151,6 +191,7 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
                             "images": len(detail.images),
                             "stored_images": stored_images,
                             "score": assessment.score,
+                            "elapsed_ms": post_total_ms,
                         },
                     )
         comments = process_pending_comments(config, db)
@@ -289,26 +330,79 @@ def _store_images(
 ) -> int:
     stored = 0
     for index, image in enumerate(detail.images, start=1):
+        image_started_at = time.monotonic()
         _emit(
             progress,
             "image_started",
-            {"post_id": post_id, "index": index, "total": len(detail.images), "url": image.url},
+            {
+                "post_id": post_id,
+                "post_key": detail.ref.post_key,
+                "index": index,
+                "total": len(detail.images),
+                "url": image.url,
+            },
         )
+        started = time.monotonic()
         if db.image_exists(post_id, image.url):
+            _emit_image_done(
+                progress,
+                detail,
+                index,
+                len(detail.images),
+                image.url,
+                "already_exists",
+                {"db_check_ms": _elapsed_ms(started), "total_ms": _elapsed_ms(image_started_at)},
+            )
             continue
+        db_check_ms = _elapsed_ms(started)
+        started = time.monotonic()
         image_bytes = scraper.download_image(image.url, detail.ref.url)
         if not image_bytes:
+            _emit_image_done(
+                progress,
+                detail,
+                index,
+                len(detail.images),
+                image.url,
+                "download_failed",
+                {
+                    "db_check_ms": db_check_ms,
+                    "download_ms": _elapsed_ms(started),
+                    "total_ms": _elapsed_ms(image_started_at),
+                },
+            )
             continue
+        download_ms = _elapsed_ms(started)
+        started = time.monotonic()
         try:
             fingerprint = fingerprint_image(image_bytes)
         except (UnidentifiedImageError, OSError):
+            _emit_image_done(
+                progress,
+                detail,
+                index,
+                len(detail.images),
+                image.url,
+                "fingerprint_failed",
+                {
+                    "db_check_ms": db_check_ms,
+                    "download_ms": download_ms,
+                    "fingerprint_ms": _elapsed_ms(started),
+                    "bytes": len(image_bytes),
+                    "total_ms": _elapsed_ms(image_started_at),
+                },
+            )
             continue
+        fingerprint_ms = _elapsed_ms(started)
+        started = time.monotonic()
         local_path = save_image_bytes(
             config.image_dir,
             detail.ref.post_key,
             image.url,
             image_bytes,
         )
+        file_save_ms = _elapsed_ms(started)
+        started = time.monotonic()
         db.add_image(
             post_id=post_id,
             image_url=image.url,
@@ -319,13 +413,76 @@ def _store_images(
             width=fingerprint.width,
             height=fingerprint.height,
         )
+        db_add_ms = _elapsed_ms(started)
         stored += 1
+        _emit_image_done(
+            progress,
+            detail,
+            index,
+            len(detail.images),
+            image.url,
+            "stored",
+            {
+                "db_check_ms": db_check_ms,
+                "download_ms": download_ms,
+                "fingerprint_ms": fingerprint_ms,
+                "file_save_ms": file_save_ms,
+                "db_add_ms": db_add_ms,
+                "bytes": len(image_bytes),
+                "width": fingerprint.width,
+                "height": fingerprint.height,
+                "total_ms": _elapsed_ms(image_started_at),
+            },
+        )
     return stored
 
 
 def _emit(progress: ProgressCallback | None, event: str, payload: dict[str, Any]) -> None:
     if progress is not None:
         progress(event, payload)
+
+
+def _emit_service_timing(
+    progress: ProgressCallback | None,
+    ref: PostRef,
+    phase: str,
+    elapsed_ms: int,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    payload: dict[str, Any] = {
+        "post_key": ref.post_key,
+        "title": ref.title,
+        "phase": phase,
+        "elapsed_ms": elapsed_ms,
+    }
+    if extra:
+        payload.update(extra)
+    _emit(progress, "post_timing", payload)
+
+
+def _emit_image_done(
+    progress: ProgressCallback | None,
+    detail: PostDetail,
+    index: int,
+    total: int,
+    url: str,
+    status: str,
+    timings: dict[str, Any],
+) -> None:
+    payload: dict[str, Any] = {
+        "post_key": detail.ref.post_key,
+        "title": detail.title,
+        "index": index,
+        "total": total,
+        "url": url,
+        "status": status,
+    }
+    payload.update(timings)
+    _emit(progress, "image_done", payload)
+
+
+def _elapsed_ms(started: float) -> int:
+    return int((time.monotonic() - started) * 1000)
 
 
 def _print_progress(event: str, payload: dict[str, Any]) -> None:
@@ -384,6 +541,13 @@ def _print_progress(event: str, payload: dict[str, Any]) -> None:
             f"{payload.get('post_key', '-')} {payload['title']}",
             flush=True,
         )
+    elif event == "post_timing":
+        print(
+            "[time] "
+            f"{payload.get('post_key', '-')} phase={payload.get('phase')} "
+            f"elapsed={payload.get('elapsed_ms')}ms {_timing_extra(payload)}",
+            flush=True,
+        )
     elif event == "direct_scan_range":
         limit = payload.get("limit")
         limit_text = "all" if not limit else str(limit)
@@ -408,9 +572,29 @@ def _print_progress(event: str, payload: dict[str, Any]) -> None:
                 f"{payload['post_key']} {payload['url']}",
                 flush=True,
             )
+    elif event == "image_started":
+        print(
+            "[image] "
+            f"{payload.get('post_key', '-')} {payload.get('index')}/{payload.get('total')} "
+            f"start {payload.get('url')}",
+            flush=True,
+        )
+    elif event == "image_done":
+        print(
+            "[image] "
+            f"{payload.get('post_key', '-')} {payload.get('index')}/{payload.get('total')} "
+            f"status={payload.get('status')} total={payload.get('total_ms')}ms "
+            f"download={payload.get('download_ms', '-')}ms "
+            f"hash={payload.get('fingerprint_ms', '-')}ms "
+            f"file={payload.get('file_save_ms', '-')}ms "
+            f"db={payload.get('db_add_ms', '-')}ms "
+            f"bytes={payload.get('bytes', '-')}",
+            flush=True,
+        )
     elif event == "post_done":
         print(
             f"[scan] saved: score={payload['score']} images={payload['stored_images']} "
+            f"elapsed={payload.get('elapsed_ms', '-')}ms "
             f"key={payload.get('post_key', '-')} author={payload['author']} title={payload['title']}",
             flush=True,
         )
@@ -460,6 +644,39 @@ def _short(value: Any, max_length: int) -> str:
     if len(text) <= max_length:
         return text
     return f"{text[: max_length - 3]}..."
+
+
+def _timing_extra(payload: dict[str, Any]) -> str:
+    ignored = {"post_key", "phase", "elapsed_ms"}
+    parts = []
+    for key in (
+        "frames",
+        "body_frames",
+        "chars",
+        "images",
+        "found",
+        "stored",
+        "score",
+        "detail_ms",
+        "db_ms",
+        "images_ms",
+        "assess_ms",
+        "assessment_save_ms",
+        "blacklist_ms",
+        "final_url",
+        "title",
+        "author",
+        "posted_at",
+    ):
+        if key in ignored or key not in payload:
+            continue
+        value = payload[key]
+        if key == "final_url":
+            value = _short(value, 140)
+        elif key in {"title", "author", "posted_at"}:
+            value = _short(value, 60)
+        parts.append(f"{key}={value}")
+    return " ".join(parts)
 
 
 def _should_print_skip(payload: dict[str, Any]) -> bool:

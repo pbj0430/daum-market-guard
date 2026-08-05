@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import time
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
@@ -258,18 +259,58 @@ class DaumCafeScraper:
             "body_excerpt": reports[0]["body_excerpt"] if reports else "",
         }
 
-    def collect_post_detail(self, ref: PostRef) -> PostDetail:
+    def collect_post_detail(self, ref: PostRef, progress: Any | None = None) -> PostDetail:
+        total_started = time.monotonic()
+        timings: dict[str, int] = {}
         page = self.page()
+        started = time.monotonic()
         self._goto_with_login(page, ref.url)
+        timings["open_ms"] = _elapsed_ms(started)
+        _emit_detail_timing(progress, ref, "open", timings["open_ms"], {"final_url": page.url})
+        started = time.monotonic()
         body_frames = self._body_frames(page)
+        timings["find_body_ms"] = _elapsed_ms(started)
         has_post_content = bool(body_frames)
+        _emit_detail_timing(
+            progress,
+            ref,
+            "find_body",
+            timings["find_body_ms"],
+            {"frames": len(page.frames), "body_frames": len(body_frames)},
+        )
+        started = time.monotonic()
         content_text = self._content_text(page)
+        timings["content_ms"] = _elapsed_ms(started)
+        _emit_detail_timing(
+            progress,
+            ref,
+            "content",
+            timings["content_ms"],
+            {"chars": len(content_text)},
+        )
+        started = time.monotonic()
         images = self._extract_images_from_page_and_frames(page)
+        timings["image_refs_ms"] = _elapsed_ms(started)
+        _emit_detail_timing(
+            progress,
+            ref,
+            "image_refs",
+            timings["image_refs_ms"],
+            {"images": len(images)},
+        )
         if not has_post_content:
             raise RuntimeError(f"Post not found or not a readable post: {ref.url}")
+        started = time.monotonic()
         self._validate_loaded_post_identity(ref, page, body_frames)
+        timings["identity_ms"] = _elapsed_ms(started)
+        _emit_detail_timing(progress, ref, "identity", timings["identity_ms"])
+        started = time.monotonic()
         metadata = self._article_metadata_from_frames(body_frames)
+        timings["metadata_ms"] = _elapsed_ms(started)
+        _emit_detail_timing(progress, ref, "metadata", timings["metadata_ms"], metadata)
+        started = time.monotonic()
         article_sections = self._article_text_sections(body_frames)
+        timings["header_parse_ms"] = _elapsed_ms(started)
         title = (
             metadata.get("title", "")
             or self._first_text(body_frames, ARTICLE_TITLE_SELECTORS)
@@ -285,6 +326,19 @@ class DaumCafeScraper:
             title = ref.title
         if title == ref.title:
             title = _title_from_content_text(content_text) or ref.title
+        timings["total_ms"] = _elapsed_ms(total_started)
+        _emit_detail_timing(
+            progress,
+            ref,
+            "detail_total",
+            timings["total_ms"],
+            {
+                "title": title,
+                "author": author,
+                "posted_at": posted_at,
+                "images": len(images),
+            },
+        )
         return PostDetail(
             ref=ref,
             title=title or ref.title,
@@ -1202,6 +1256,28 @@ def _looks_non_article_title(value: str) -> bool:
 def _emit(progress: Any | None, event: str, payload: dict[str, Any]) -> None:
     if progress is not None:
         progress(event, payload)
+
+
+def _emit_detail_timing(
+    progress: Any | None,
+    ref: PostRef,
+    phase: str,
+    elapsed_ms: int,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    payload: dict[str, Any] = {
+        "post_key": ref.post_key,
+        "title": ref.title,
+        "phase": phase,
+        "elapsed_ms": elapsed_ms,
+    }
+    if extra:
+        payload.update(extra)
+    _emit(progress, "post_timing", payload)
+
+
+def _elapsed_ms(started: float) -> int:
+    return int((time.monotonic() - started) * 1000)
 
 
 def _article_link_samples(links: list[dict[str, str]]) -> list[dict[str, str]]:
