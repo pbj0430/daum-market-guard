@@ -108,7 +108,7 @@ class AppConfig:
     direct_scan_limit_per_board: int = 0
     rescan_existing_posts: bool = False
     image_timeout_seconds: int = 20
-    duplicate_hamming_threshold: int = 8
+    duplicate_hamming_threshold: int = 4
     blacklist_score_threshold: int = 90
     boards: list[BoardConfig] = field(
         default_factory=lambda: [BoardConfig(name, url) for name, url in DEFAULT_BOARDS]
@@ -202,7 +202,7 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
         direct_scan_limit_per_board=int(data.get("direct_scan_limit_per_board", 0)),
         rescan_existing_posts=bool(data.get("rescan_existing_posts", False)),
         image_timeout_seconds=int(data.get("image_timeout_seconds", 20)),
-        duplicate_hamming_threshold=int(data.get("duplicate_hamming_threshold", 8)),
+        duplicate_hamming_threshold=int(data.get("duplicate_hamming_threshold", 4)),
         blacklist_score_threshold=int(data.get("blacklist_score_threshold", 90)),
         boards=boards,
         comment=comment,

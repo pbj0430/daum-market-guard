@@ -8,6 +8,7 @@ from .models import Assessment
 
 
 def assess_post(db: Database, post_id: int, hamming_threshold: int) -> Assessment:
+    effective_hamming_threshold = min(hamming_threshold, 4)
     post = db.get_post(post_id)
     current_images = db.get_post_images(post_id)
     prior_images = list(db.iter_prior_images(post_id))
@@ -24,8 +25,8 @@ def assess_post(db: Database, post_id: int, hamming_threshold: int) -> Assessmen
         for prior in prior_images:
             exact = image["sha256"] and image["sha256"] == prior.sha256
             similar = (
-                hamming_hex(str(image["dhash"]), prior.dhash) <= hamming_threshold
-                or hamming_hex(str(image["ahash"]), prior.ahash) <= hamming_threshold
+                hamming_hex(str(image["dhash"]), prior.dhash) <= effective_hamming_threshold
+                and hamming_hex(str(image["ahash"]), prior.ahash) <= effective_hamming_threshold
             )
             if not exact and not similar:
                 continue
@@ -67,7 +68,6 @@ def assess_post(db: Database, post_id: int, hamming_threshold: int) -> Assessmen
                 f"다른 글쓴이의 과거 게시글과 유사한 이미지 {duplicate_image_count}장이 발견되었습니다."
             )
         else:
-            score = max(score, min(45, 15 + duplicate_image_count * 10))
             reasons.append(
                 f"같은 글쓴이의 과거 게시글과 유사한 이미지 {duplicate_image_count}장이 발견되었습니다."
             )

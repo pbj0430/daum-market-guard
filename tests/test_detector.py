@@ -73,6 +73,39 @@ class DetectorTests(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_one_matching_hash_is_not_enough_for_similarity(self) -> None:
+        with TemporaryDirectory() as directory:
+            db = Database(Path(directory) / "test.sqlite3")
+            try:
+                old_id = db.upsert_post(_detail("C3Zg", 1, "old"))
+                db.add_image(old_id, "old.jpg", "", "old-bytes", "0" * 16, "0" * 16, 640, 480)
+                new_id = db.upsert_post(_detail("C3Zg", 2, "new"))
+                db.add_image(new_id, "new.jpg", "", "new-bytes", "f" * 16, "0" * 16, 640, 480)
+
+                assessment = assess_post(db, new_id, 4)
+
+                self.assertEqual(assessment.score, 0)
+                self.assertEqual(assessment.duplicate_image_count, 0)
+                self.assertEqual(assessment.different_author_duplicate_count, 0)
+            finally:
+                db.close()
+
+    def test_loose_config_threshold_is_capped(self) -> None:
+        with TemporaryDirectory() as directory:
+            db = Database(Path(directory) / "test.sqlite3")
+            try:
+                old_id = db.upsert_post(_detail("C3Zg", 1, "old"))
+                db.add_image(old_id, "old.jpg", "", "old-bytes", "0" * 16, "0" * 16, 640, 480)
+                new_id = db.upsert_post(_detail("C3Zg", 2, "new"))
+                db.add_image(new_id, "new.jpg", "", "new-bytes", "0" * 14 + "3f", "0" * 14 + "3f", 640, 480)
+
+                assessment = assess_post(db, new_id, 8)
+
+                self.assertEqual(assessment.score, 0)
+                self.assertEqual(assessment.duplicate_image_count, 0)
+            finally:
+                db.close()
+
     def test_multiple_different_author_duplicates_score_high(self) -> None:
         with TemporaryDirectory() as directory:
             db = Database(Path(directory) / "test.sqlite3")
@@ -103,6 +136,24 @@ class DetectorTests(unittest.TestCase):
 
                 self.assertEqual(assessment.duplicate_image_count, 1)
                 self.assertEqual(assessment.same_author_duplicate_count, 0)
+                self.assertEqual(assessment.different_author_duplicate_count, 0)
+            finally:
+                db.close()
+
+    def test_same_author_image_reuse_does_not_raise_score(self) -> None:
+        with TemporaryDirectory() as directory:
+            db = Database(Path(directory) / "test.sqlite3")
+            try:
+                old_id = db.upsert_post(_detail("C3Zg", 1, "same-author"))
+                db.add_image(old_id, "old.jpg", "", "same", "0" * 16, "0" * 16, 640, 480)
+                new_id = db.upsert_post(_detail("C3Zi", 2, "same-author"))
+                db.add_image(new_id, "new.jpg", "", "same", "0" * 16, "0" * 16, 640, 480)
+
+                assessment = assess_post(db, new_id, 4)
+
+                self.assertEqual(assessment.score, 0)
+                self.assertEqual(assessment.duplicate_image_count, 1)
+                self.assertEqual(assessment.same_author_duplicate_count, 1)
                 self.assertEqual(assessment.different_author_duplicate_count, 0)
             finally:
                 db.close()
