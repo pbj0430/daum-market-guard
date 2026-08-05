@@ -279,6 +279,8 @@ class DaumCafeScraper:
             timings["find_body_ms"],
             {"frames": len(page.frames), "body_frames": len(body_frames)},
         )
+        if not has_post_content:
+            raise RuntimeError(f"Post not found or not a readable post: {ref.url}")
         started = time.monotonic()
         content_text = self._content_text(page)
         timings["content_ms"] = _elapsed_ms(started)
@@ -299,8 +301,6 @@ class DaumCafeScraper:
             timings["image_refs_ms"],
             {"images": len(images)},
         )
-        if not has_post_content:
-            raise RuntimeError(f"Post not found or not a readable post: {ref.url}")
         started = time.monotonic()
         self._validate_loaded_post_identity(ref, page, body_frames)
         timings["identity_ms"] = _elapsed_ms(started)
@@ -475,7 +475,7 @@ class DaumCafeScraper:
     def _goto_with_login(self, page: Page, url: str) -> None:
         target_url = self._desktop_url(url)
         page.goto(target_url, wait_until="domcontentloaded", timeout=60_000)
-        page.wait_for_timeout(1500)
+        page.wait_for_timeout(500)
         if not self._looks_logged_out(page):
             return
         if not self.config.login.has_credentials:
@@ -485,7 +485,7 @@ class DaumCafeScraper:
             )
         self._login_with_credentials(page, target_url)
         page.goto(target_url, wait_until="domcontentloaded", timeout=60_000)
-        page.wait_for_timeout(1500)
+        page.wait_for_timeout(1000)
         if self._looks_logged_out(page):
             raise RuntimeError("Automatic login failed. Check the saved credentials or selectors.")
 
@@ -553,7 +553,7 @@ class DaumCafeScraper:
             response = self.context.request.get(
                 image_url,
                 headers={"Referer": referer},
-                timeout=self.config.image_timeout_seconds * 1000,
+                timeout=min(max(1, self.config.image_timeout_seconds), 8) * 1000,
             )
             if not response.ok:
                 return None

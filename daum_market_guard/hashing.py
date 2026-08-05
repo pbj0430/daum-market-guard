@@ -24,10 +24,17 @@ def _bits_to_hex(bits: list[bool]) -> str:
     return f"{value:0{width}x}"
 
 
-def _load_image(image_bytes: bytes) -> Image.Image:
+def _load_image(image_bytes: bytes) -> tuple[Image.Image, tuple[int, int]]:
     image = Image.open(BytesIO(image_bytes))
+    original_size = image.size
+    try:
+        image.draft("L", (1024, 1024))
+    except (AttributeError, OSError):
+        pass
     image.load()
-    return ImageOps.exif_transpose(image).convert("L")
+    image = ImageOps.exif_transpose(image).convert("L")
+    image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+    return image, original_size
 
 
 def average_hash(image: Image.Image, size: int = 8) -> str:
@@ -65,8 +72,8 @@ def hamming_hex(left: str, right: str) -> int:
 
 def fingerprint_image(image_bytes: bytes) -> ImageFingerprint:
     digest = sha256(image_bytes).hexdigest()
-    image = _load_image(image_bytes)
-    width, height = image.size
+    image, original_size = _load_image(image_bytes)
+    width, height = original_size
     return ImageFingerprint(
         sha256=digest,
         ahash=average_hash(image),

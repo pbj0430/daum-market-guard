@@ -22,7 +22,7 @@ max_posts_per_board_page = 40 # used to detect the latest number from the list
 direct_scan_min_post_id = 1
 direct_scan_limit_per_board = 0 # 0 scans every number from latest down to direct_scan_min_post_id
 rescan_existing_posts = false
-image_timeout_seconds = 20
+image_timeout_seconds = 8
 duplicate_hamming_threshold = 4
 blacklist_score_threshold = 90
 
