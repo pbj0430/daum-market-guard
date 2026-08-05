@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import shutil
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, quote, urljoin, urlparse
@@ -41,11 +42,15 @@ STRUCTURED_POST_KEY_PATTERNS = [
     ),
 ]
 BODY_SELECTORS = [
+    "#bbs_contents #user_contents",
+    "#bbs_contents .board_post.tx-content-container",
     "#user_contents",
     ".board_post.tx-content-container",
     ".tx-content-container",
 ]
 ARTICLE_TITLE_SELECTORS = [
+    ".tit_info .article_title",
+    "strong.tit_info span.article_title",
     ".article_subject",
     ".tit_subject",
     ".tit_info",
@@ -263,14 +268,17 @@ class DaumCafeScraper:
         if not has_post_content:
             raise RuntimeError(f"Post not found or not a readable post: {ref.url}")
         self._validate_loaded_post_identity(ref, page, body_frames)
+        metadata = self._article_metadata_from_frames(body_frames)
         article_sections = self._article_text_sections(body_frames)
         title = (
-            _title_from_article_sections(article_sections)
+            metadata.get("title", "")
             or self._first_text(body_frames, ARTICLE_TITLE_SELECTORS)
+            or _title_from_article_sections(article_sections)
         )
-        author = _author_from_article_sections(article_sections)
+        author = metadata.get("author", "") or _author_from_article_sections(article_sections)
         posted_at = (
-            _posted_at_from_article_sections(article_sections)
+            metadata.get("posted_at", "")
+            or _posted_at_from_article_sections(article_sections)
             or self._first_text(body_frames, ARTICLE_DATE_SELECTORS)
         )
         if _looks_cafe_page_title(title) or _looks_non_article_title(title):
@@ -286,6 +294,49 @@ class DaumCafeScraper:
             content_text=content_text,
             images=images,
         )
+
+    def _article_metadata_from_frames(self, frames: list[Any]) -> dict[str, str]:
+        for frame in frames:
+            try:
+                metadata = _metadata_from_article_markup(frame.content())
+            except Exception:
+                metadata = {}
+            if all(metadata.get(key) for key in ("title", "author", "posted_at")):
+                return metadata
+            try:
+                dom_metadata = frame.evaluate(
+                    """
+                    () => {
+                        const clean = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+                        const titleEl = document.querySelector(
+                            'strong.tit_info span.article_title, .tit_info .article_title, .bbs_read_tit .article_title'
+                        );
+                        const authorEl = document.querySelector(
+                            '.bbs_read_tit a.link_item[data-nickname], a.link_item[data-nickname]'
+                        );
+                        const dateItems = Array.from(
+                            document.querySelectorAll('.bbs_read_tit span.txt_item, span.txt_item, time, .txt_date')
+                        ).map((el) => clean(el.innerText || el.textContent));
+                        const postedAt = dateItems.find((text) =>
+                            /^\\d{2,4}\\.\\d{1,2}\\.\\d{1,2}(?:\\s+\\d{1,2}:\\d{2})?/.test(text)
+                        ) || '';
+                        return {
+                            title: clean(titleEl ? (titleEl.innerText || titleEl.textContent) : ''),
+                            author: clean(authorEl ? (authorEl.getAttribute('data-nickname') || authorEl.innerText || authorEl.textContent) : ''),
+                            posted_at: postedAt
+                        };
+                    }
+                    """
+                )
+            except Exception:
+                dom_metadata = {}
+            metadata = {
+                key: _clean_text(str(metadata.get(key) or dom_metadata.get(key) or ""))
+                for key in ("title", "author", "posted_at")
+            }
+            if any(metadata.values()):
+                return metadata
+        return {"title": "", "author": "", "posted_at": ""}
 
     def _body_frames(self, page: Page) -> list[Any]:
         frames = []
@@ -819,6 +870,79 @@ def _clean_text(value: str) -> str:
 
 def _text_lines(value: str) -> list[str]:
     return [line for line in (_clean_text(line) for line in (value or "").splitlines()) if line]
+
+
+def _metadata_from_article_markup(value: str) -> dict[str, str]:
+    parser = _DaumArticleMetadataParser()
+    parser.feed(value or "")
+    return {
+        "title": _clean_text(parser.title),
+        "author": _clean_text(parser.author),
+        "posted_at": _clean_text(parser.posted_at),
+    }
+
+
+class _DaumArticleMetadataParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[tuple[str, dict[str, str]]] = []
+        self.title = ""
+        self.author = ""
+        self.posted_at = ""
+        self._title_depth = 0
+        self._title_parts: list[str] = []
+        self._author_depth = 0
+        self._author_parts: list[str] = []
+        self._txt_depth = 0
+        self._txt_parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attrs_dict = {key: value or "" for key, value in attrs}
+        classes = set(attrs_dict.get("class", "").split())
+        next_depth = len(self.stack) + 1
+        if tag == "span" and "article_title" in classes and self._has_ancestor_class("tit_info"):
+            self._title_depth = next_depth
+            self._title_parts = []
+        if tag == "a" and "link_item" in classes and attrs_dict.get("data-nickname") and not self.author:
+            self.author = attrs_dict["data-nickname"]
+            self._author_depth = next_depth
+            self._author_parts = []
+        if tag == "span" and "txt_item" in classes:
+            self._txt_depth = next_depth
+            self._txt_parts = []
+        self.stack.append((tag, attrs_dict))
+
+    def handle_data(self, data: str) -> None:
+        if self._title_depth:
+            self._title_parts.append(data)
+        if self._author_depth and not self.author:
+            self._author_parts.append(data)
+        if self._txt_depth:
+            self._txt_parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        depth = len(self.stack)
+        if self._title_depth == depth:
+            self.title = self.title or _clean_text("".join(self._title_parts))
+            self._title_depth = 0
+            self._title_parts = []
+        if self._author_depth == depth:
+            self.author = self.author or _clean_text("".join(self._author_parts))
+            self._author_depth = 0
+            self._author_parts = []
+        if self._txt_depth == depth:
+            text = _clean_text("".join(self._txt_parts))
+            if not self.posted_at:
+                match = ARTICLE_DATE_PATTERN.search(text)
+                if match:
+                    self.posted_at = match.group(0)
+            self._txt_depth = 0
+            self._txt_parts = []
+        if self.stack:
+            self.stack.pop()
+
+    def _has_ancestor_class(self, class_name: str) -> bool:
+        return any(class_name in attrs.get("class", "").split() for _, attrs in self.stack)
 
 
 def _title_from_article_sections(sections: list[tuple[list[str], list[str]]]) -> str:

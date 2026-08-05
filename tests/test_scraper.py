@@ -7,6 +7,7 @@ from daum_market_guard.scraper import DaumCafeScraper
 from daum_market_guard.scraper import _author_from_article_sections
 from daum_market_guard.scraper import _is_notice_title
 from daum_market_guard.scraper import _looks_non_article_title
+from daum_market_guard.scraper import _metadata_from_article_markup
 from daum_market_guard.scraper import _post_key_from_url
 from daum_market_guard.scraper import _post_keys_from_text
 from daum_market_guard.scraper import _posted_at_from_article_sections
@@ -99,6 +100,28 @@ class ScraperTests(unittest.TestCase):
         self.assertEqual(
             _title_from_content_text("기채 구합니다 사이즈 S 연락 주세요 010-5650-육공칠공"),
             "기채 구합니다",
+        )
+
+    def test_extracts_metadata_from_daum_article_markup(self) -> None:
+        html = """
+        <strong class="tit_info" tabindex="0">
+          <span class="article_title">지니레이서4 팝니다</span>
+        </strong>
+        <a href="javascript:" class="link_item" data-rolecode="25"
+           data-nickname="호불호가" data-enc-userid="zXe-Xe2bzdE0">호불호가</a>
+        <span class="txt_item" tabindex="0">추천 0</span>
+        <span class="txt_item" tabindex="0">조회 84</span>
+        <span class="txt_item" tabindex="0">26.08.05 07:30</span>
+        <div id="bbs_contents" class="bbs_contents">
+          <div id="user_contents" class="board_post tx-content-container">
+            <p tabindex="0">사이이즈L입니다</p>
+          </div>
+        </div>
+        """
+
+        self.assertEqual(
+            _metadata_from_article_markup(html),
+            {"title": "지니레이서4 팝니다", "author": "호불호가", "posted_at": "26.08.05 07:30"},
         )
 
     def test_rejects_notice_titles(self) -> None:
