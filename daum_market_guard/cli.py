@@ -24,11 +24,16 @@ def main(argv: list[str] | None = None) -> None:
     subparsers.add_parser("login", help="open browser and save authenticated session")
     scan = subparsers.add_parser("scan", help="run one scan")
     scan.add_argument("--quiet", action="store_true", help="hide per-post progress")
+    scan.add_argument("--limit-per-board", type=int, default=None, help="limit direct-number scan count per board")
+    scan.add_argument("--rescan-existing", action="store_true", help="re-open posts already stored in DB")
     subparsers.add_parser("daemon", help="run scans forever")
     gui = subparsers.add_parser("gui", help="run local browser dashboard")
     gui.add_argument("--host", default="127.0.0.1")
     gui.add_argument("--port", type=int, default=8080)
     subparsers.add_parser("cleanup", help="remove known non-market false-positive rows")
+    clear_data = subparsers.add_parser("clear-data", help="delete DB, images, and missing-post cache")
+    clear_data.add_argument("--yes", action="store_true", help="confirm deletion")
+    clear_data.add_argument("--profile", action="store_true", help="also delete saved browser login profile")
 
     suspects = subparsers.add_parser("suspects", help="list suspicious posts")
     suspects.add_argument("--min-score", type=int, default=70)
@@ -61,6 +66,12 @@ def main(argv: list[str] | None = None) -> None:
         print(f"login session saved under: {login_config.user_data_dir}")
         return
     if args.command == "scan":
+        if args.limit_per_board is not None or args.rescan_existing:
+            config = _replace_scan_options(
+                config,
+                limit_per_board=args.limit_per_board,
+                rescan_existing=args.rescan_existing,
+            )
         result = run_once(config, progress=None if args.quiet else _print_progress)
         print(
             f"boards={result.stats.board_count} refs={result.stats.post_refs} "
@@ -81,6 +92,9 @@ def main(argv: list[str] | None = None) -> None:
         finally:
             db.close()
         print(f"deleted false-positive posts={deleted}")
+        return
+    if args.command == "clear-data":
+        _clear_data(config, include_profile=args.profile, yes=args.yes)
         return
     if args.command == "suspects":
         _print_suspects(config, args.min_score)
@@ -130,6 +144,23 @@ def _init_config(path: Path) -> None:
         raise SystemExit(f"already exists: {path}")
     shutil.copyfile(source, path)
     print(f"created: {path}")
+
+
+def _clear_data(config, include_profile: bool, yes: bool) -> None:
+    if not yes:
+        raise SystemExit("Refusing to delete data without --yes")
+    targets = [config.data_dir]
+    if include_profile:
+        targets.append(config.user_data_dir)
+    for target in targets:
+        path = Path(target).resolve()
+        if path.anchor == str(path) or len(path.parts) < 3:
+            raise SystemExit(f"refusing unsafe delete target: {path}")
+        if path.exists():
+            shutil.rmtree(path)
+            print(f"deleted: {path}")
+        else:
+            print(f"not found: {path}")
 
 
 def _print_suspects(config, min_score: int) -> None:
@@ -244,6 +275,40 @@ def _replace_comment_min_score(config, min_score: int):
         blacklist_score_threshold=config.blacklist_score_threshold,
         boards=config.boards,
         comment=comment,
+        login=config.login,
+        selectors=config.selectors,
+    )
+
+
+def _replace_scan_options(config, limit_per_board: int | None, rescan_existing: bool):
+    return type(config)(
+        cafe_url=config.cafe_url,
+        cafe_grpid=config.cafe_grpid,
+        login_url=config.login_url,
+        data_dir=config.data_dir,
+        user_data_dir=config.user_data_dir,
+        poll_interval_seconds=config.poll_interval_seconds,
+        headless=config.headless,
+        locale=config.locale,
+        timezone_id=config.timezone_id,
+        user_agent=config.user_agent,
+        allow_mobile_fallback=config.allow_mobile_fallback,
+        browser_executable_path=config.browser_executable_path,
+        scan_strategy=config.scan_strategy,
+        max_pages_per_board=config.max_pages_per_board,
+        max_posts_per_board_page=config.max_posts_per_board_page,
+        direct_scan_min_post_id=config.direct_scan_min_post_id,
+        direct_scan_limit_per_board=(
+            config.direct_scan_limit_per_board
+            if limit_per_board is None
+            else max(0, limit_per_board)
+        ),
+        rescan_existing_posts=config.rescan_existing_posts or rescan_existing,
+        image_timeout_seconds=config.image_timeout_seconds,
+        duplicate_hamming_threshold=config.duplicate_hamming_threshold,
+        blacklist_score_threshold=config.blacklist_score_threshold,
+        boards=config.boards,
+        comment=config.comment,
         login=config.login,
         selectors=config.selectors,
     )

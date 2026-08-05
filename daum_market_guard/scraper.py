@@ -26,18 +26,10 @@ ARTICLE_FUNC_PATTERNS = [
     re.compile(r"['\"](?P<board>[A-Za-z0-9]+)['\"]\s*,\s*['\"]?(?P<id>\d+)['\"]?"),
     re.compile(r"(?P<board>[A-Za-z0-9]+)\D{0,20}(?P<id>\d{2,})"),
 ]
-CONTENT_SELECTORS = [
+BODY_SELECTORS = [
     "#user_contents",
     ".board_post.tx-content-container",
     ".tx-content-container",
-    ".article_view",
-    ".article_content",
-    ".view_content",
-    ".bbs_contents",
-    ".post_view",
-    ".post-view",
-    "article",
-    "main",
 ]
 
 
@@ -223,8 +215,9 @@ class DaumCafeScraper:
     def collect_post_detail(self, ref: PostRef) -> PostDetail:
         page = self.page()
         self._goto_with_login(page, ref.url)
+        body_frames = self._body_frames(page)
         title = self._first_text(
-            page,
+            body_frames,
             [
                 ".article_subject",
                 ".tit_subject",
@@ -238,7 +231,7 @@ class DaumCafeScraper:
             ],
         )
         author = self._first_text(
-            page,
+            body_frames,
             [
                 ".txt_writer",
                 ".nickname",
@@ -248,11 +241,11 @@ class DaumCafeScraper:
                 "[class*='nickname']",
             ],
         )
-        posted_at = self._first_text(page, ["time", ".date", ".txt_date", "[class*='date']"])
-        has_post_content = self._has_post_content(page)
+        posted_at = self._first_text(body_frames, ["time", ".date", ".txt_date", "[class*='date']"])
+        has_post_content = bool(body_frames)
         content_text = self._content_text(page)
         images = self._extract_images_from_page_and_frames(page)
-        if not has_post_content and _looks_cafe_page_title(title):
+        if not has_post_content:
             raise RuntimeError(f"Post not found or not a readable post: {ref.url}")
         if _looks_cafe_page_title(title):
             title = ref.title
@@ -266,15 +259,17 @@ class DaumCafeScraper:
             images=images,
         )
 
-    def _has_post_content(self, page: Page) -> bool:
+    def _body_frames(self, page: Page) -> list[Any]:
+        frames = []
         for frame in page.frames:
-            for selector in CONTENT_SELECTORS:
+            for selector in BODY_SELECTORS:
                 try:
                     if frame.locator(selector).count() > 0:
-                        return True
+                        frames.append(frame)
+                        break
                 except Exception:
                     continue
-        return False
+        return frames
 
     def _goto_with_login(self, page: Page, url: str) -> None:
         target_url = self._desktop_url(url)
@@ -445,7 +440,7 @@ class DaumCafeScraper:
         """
         for frame in page.frames:
             try:
-                images = frame.evaluate(script, CONTENT_SELECTORS)
+                images = frame.evaluate(script, BODY_SELECTORS)
             except Exception:
                 continue
             for item in images:
@@ -577,8 +572,8 @@ class DaumCafeScraper:
             return False
         return True
 
-    def _first_text(self, page: Page, selectors: list[str]) -> str:
-        for frame in page.frames:
+    def _first_text(self, frames: list[Any], selectors: list[str]) -> str:
+        for frame in frames:
             for selector in selectors:
                 try:
                     locator = frame.locator(selector).first
@@ -593,25 +588,11 @@ class DaumCafeScraper:
                         return value
                 except Exception:
                     continue
-        try:
-            title = page.title()
-        except Exception:
-            title = ""
-        return _clean_text(title)
+        return ""
 
     def _content_text(self, page: Page) -> str:
-        selectors = [
-            *CONTENT_SELECTORS,
-            ".article_view",
-            ".article_content",
-            ".view_content",
-            ".bbs_contents",
-            ".content",
-            "article",
-            "main",
-        ]
         for frame in page.frames:
-            for selector in selectors:
+            for selector in BODY_SELECTORS:
                 try:
                     locator = frame.locator(selector).first
                     if locator.count() == 0:
@@ -621,11 +602,7 @@ class DaumCafeScraper:
                         return text[:10000]
                 except Exception:
                     continue
-        try:
-            text = _clean_text(page.locator("body").inner_text(timeout=1000))
-        except Exception:
-            return ""
-        return text[:10000]
+        return ""
 
     def _looks_logged_out(self, page: Page) -> bool:
         url = page.url.lower()
