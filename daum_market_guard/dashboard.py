@@ -319,6 +319,7 @@ def _row_to_post(row: Any) -> dict[str, Any]:
     return {
         "id": row["id"],
         "board_id": row["board_id"],
+        "post_key": row["post_key"],
         "url": row["url"],
         "title": row["title"],
         "author_name": row["author_name"],
@@ -434,6 +435,7 @@ INDEX_HTML = r"""<!doctype html>
     .score.bad { background:#fee4e2; color:var(--bad); }
     .title { font-weight:800; margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .title a { color:#123048; text-decoration:none; }
+    .key { display:inline-block; margin-right:6px; padding:2px 6px; border-radius:6px; background:#e8f4f2; color:#13746d; font-size:12px; font-weight:800; }
     .meta, .content, .reasons, .links { color:var(--muted); font-size:12px; line-height:1.45; }
     .content { color:#344054; margin-top:7px; white-space:pre-wrap; max-height:66px; overflow:hidden; }
     .links a { color:#075985; margin-right:8px; }
@@ -502,10 +504,10 @@ INDEX_HTML = r"""<!doctype html>
       if (e.event === 'board_page_opening') return `page ${p.page}: ${p.url}`;
       if (e.event === 'board_page_loaded') return `accepted ${p.accepted_count}/${p.link_count}, frames ${p.frame_count}, final ${p.page_url}`;
       if (e.event === 'board_posts_found') return `${p.board}: ${p.count} candidate numbers`;
-      if (e.event === 'post_started') return `${p.index}/${p.total} ${p.title} | ${p.url}`;
+      if (e.event === 'post_started') return `${p.index}/${p.total} ${p.post_key || '-'} ${p.title} | ${p.url}`;
       if (e.event === 'post_skipped') return `${p.index}/${p.total} ${p.post_key} ${p.title}`;
       if (e.event === 'post_missing') return `${p.index}/${p.total} ${p.post_key}`;
-      if (e.event === 'post_done') return `score ${p.score}, images ${p.stored_images}, author ${p.author || '-'}, ${p.title || ''}`;
+      if (e.event === 'post_done') return `${p.post_key || '-'} score ${p.score}, images ${p.stored_images}, author ${p.author || '-'}, ${p.title || ''}`;
       if (e.event === 'post_failed') return `${p.title || ''} | ${p.error || ''} | ${p.url || ''}`;
       if (e.event === 'scan_done') return `boards ${p.boards}, refs ${p.refs}, posts ${p.posts}, images ${p.images}, assessed ${p.assessed}`;
       if (e.event === 'debug_board' || e.event === 'board_debug') {
@@ -553,8 +555,8 @@ INDEX_HTML = r"""<!doctype html>
         return `<div class="post">
           <div class="score ${scoreClass(p.score)}">${p.score || 0}</div>
           <div>
-            <div class="title"><a target="_blank" href="${esc(p.url)}">${esc(p.title || '(no title)')}</a></div>
-            <div class="meta">${esc(p.board_id)} | ${esc(p.author_name || '-')} | images ${p.image_count || 0} | dup ${p.duplicate_image_count || 0}/${p.duplicate_post_count || 0}</div>
+            <div class="title"><span class="key">${esc(p.post_key || p.board_id || '-')}</span> <a target="_blank" href="${esc(p.url)}">${esc(p.title || '(no title)')}</a></div>
+            <div class="meta">${esc(p.author_name || '-')} | images ${p.image_count || 0} | dup ${p.duplicate_image_count || 0}/${p.duplicate_post_count || 0}</div>
             <div class="content">${esc(short(p.content_text, 360))}</div>
             <div class="reasons">${reasons}</div>
             <div class="links">${links}</div>

@@ -100,6 +100,7 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
                             "board": board.name,
                             "index": index,
                             "total": len(refs),
+                            "post_key": ref.post_key,
                             "title": ref.title,
                             "url": ref.url,
                         },
@@ -144,6 +145,7 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
                         "post_done",
                         {
                             "post_id": post_id,
+                            "post_key": detail.ref.post_key,
                             "title": detail.title,
                             "author": detail.author_name,
                             "images": len(detail.images),
@@ -215,12 +217,20 @@ def _collect_post_refs(
     return [
         PostRef(
             board_id=board.board_id,
-            url=f"https://cafe.daum.net/{cafe_id}/{board.board_id}/{number}",
+            url=_direct_read_url(config, board, number, cafe_id),
             title=f"{board.board_id} #{number}",
             post_key=f"{board.board_id}:{number}",
         )
         for number in numbers
     ]
+
+
+def _direct_read_url(config: AppConfig, board, number: int, cafe_id: str) -> str:
+    grpid = config.cafe_grpid or cafe_id
+    return (
+        "https://cafe.daum.net/_c21_/bbs_read"
+        f"?grpid={grpid}&fldid={board.board_id}&datanum={number}"
+    )
 
 
 def _direct_cafe_id(config: AppConfig, board) -> str:
@@ -370,7 +380,8 @@ def _print_progress(event: str, payload: dict[str, Any]) -> None:
         )
     elif event == "post_started":
         print(
-            f"[scan] post {payload['index']}/{payload['total']}: {payload['title']}",
+            f"[scan] post {payload['index']}/{payload['total']}: "
+            f"{payload.get('post_key', '-')} {payload['title']}",
             flush=True,
         )
     elif event == "direct_scan_range":
@@ -400,7 +411,7 @@ def _print_progress(event: str, payload: dict[str, Any]) -> None:
     elif event == "post_done":
         print(
             f"[scan] saved: score={payload['score']} images={payload['stored_images']} "
-            f"author={payload['author']} title={payload['title']}",
+            f"key={payload.get('post_key', '-')} author={payload['author']} title={payload['title']}",
             flush=True,
         )
     elif event == "scan_failed":

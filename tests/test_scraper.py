@@ -6,6 +6,7 @@ from daum_market_guard.scraper import find_system_chromium
 from daum_market_guard.scraper import DaumCafeScraper
 from daum_market_guard.scraper import _author_from_article_sections
 from daum_market_guard.scraper import _is_notice_title
+from daum_market_guard.scraper import _looks_non_article_title
 from daum_market_guard.scraper import _post_key_from_url
 from daum_market_guard.scraper import _post_keys_from_text
 from daum_market_guard.scraper import _posted_at_from_article_sections
@@ -87,6 +88,11 @@ class ScraperTests(unittest.TestCase):
         """
 
         self.assertEqual(_post_keys_from_text("C3Zg", html), {"C3Zi:119", "C3Zg:12672"})
+
+    def test_rejects_view_count_as_article_title(self) -> None:
+        self.assertTrue(_looks_non_article_title("조회 205"))
+        self.assertTrue(_looks_non_article_title("추천 0"))
+        self.assertFalse(_looks_non_article_title("볼레로5 팝니다"))
 
     def test_rejects_notice_titles(self) -> None:
         scraper = DaumCafeScraper(AppConfig())

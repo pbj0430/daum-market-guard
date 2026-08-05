@@ -276,7 +276,7 @@ class DaumCafeScraper:
             _posted_at_from_article_sections(article_sections)
             or self._first_text(body_frames, ARTICLE_DATE_SELECTORS)
         )
-        if _looks_cafe_page_title(title):
+        if _looks_cafe_page_title(title) or _looks_non_article_title(title):
             title = ref.title
         return PostDetail(
             ref=ref,
@@ -1037,6 +1037,20 @@ def _looks_cafe_page_title(value: str) -> bool:
     if "Daum" not in text:
         return False
     return len(text) <= 120
+
+
+def _looks_non_article_title(value: str) -> bool:
+    text = _clean_text(value)
+    if not text:
+        return False
+    meta_prefixes = (
+        "\uc870\ud68c",
+        "\uc870\ud68c\uc218",
+        "\ucd94\ucc9c",
+        "\ub313\uae00",
+        "\uc2a4\ud06c\ub7a9",
+    )
+    return any(text == prefix or text.startswith(f"{prefix} ") for prefix in meta_prefixes)
 
 
 def _emit(progress: Any | None, event: str, payload: dict[str, Any]) -> None:
