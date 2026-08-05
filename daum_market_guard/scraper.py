@@ -30,6 +30,14 @@ CONTENT_SELECTORS = [
     "#user_contents",
     ".board_post.tx-content-container",
     ".tx-content-container",
+    ".article_view",
+    ".article_content",
+    ".view_content",
+    ".bbs_contents",
+    ".post_view",
+    ".post-view",
+    "article",
+    "main",
 ]
 
 
@@ -423,11 +431,12 @@ class DaumCafeScraper:
                 const roots = selectors.flatMap((selector) =>
                     Array.from(document.querySelectorAll(selector))
                 );
-                const scopes = roots.length ? roots : [document];
-                return scopes.flatMap((root) =>
+                return roots.flatMap((root) =>
                     Array.from(root.querySelectorAll('img')).map((img) => ({
                         src: img.currentSrc || img.src || '',
                         dataSrc: img.getAttribute('data-img-src') || '',
+                        className: img.className || '',
+                        alt: img.getAttribute('alt') || '',
                         width: img.naturalWidth || img.width || 0,
                         height: img.naturalHeight || img.height || 0
                     }))
@@ -445,7 +454,9 @@ class DaumCafeScraper:
                     src = urljoin(frame.url, src)
                 width = int(item.get("width") or 0)
                 height = int(item.get("height") or 0)
-                if self._is_content_image(src, width, height):
+                class_name = str(item.get("className") or "")
+                alt = str(item.get("alt") or "")
+                if self._is_content_image(src, width, height, class_name, alt):
                     found.setdefault(src, ImageRef(src, width, height))
         return list(found.values())
 
@@ -534,11 +545,33 @@ class DaumCafeScraper:
             return board.board_id not in path_parts
         return True
 
-    def _is_content_image(self, src: str, width: int, height: int) -> bool:
-        lower = src.lower()
+    def _is_content_image(
+        self,
+        src: str,
+        width: int,
+        height: int,
+        class_name: str = "",
+        alt: str = "",
+    ) -> bool:
+        lower = " ".join((src, class_name, alt)).lower()
         if not src.startswith("http"):
             return False
-        if any(token in lower for token in ("icon", "profile", "emoticon", "blank.gif", "logo")):
+        if any(
+            token in lower
+            for token in (
+                "icon",
+                "profile",
+                "emoticon",
+                "blank.gif",
+                "logo",
+                "avatar",
+                "thumb_profile",
+                "default_profile",
+                "user_profile",
+                "img_profile",
+                "ico_",
+            )
+        ):
             return False
         if width and height and (width < 180 or height < 120):
             return False

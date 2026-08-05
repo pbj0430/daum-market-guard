@@ -125,6 +125,27 @@ class ScraperTests(unittest.TestCase):
         self.assertEqual(board.cafe_id, "1R9cj")
         self.assertEqual(board.board_id, "C3Zg")
 
+    def test_rejects_profile_like_images(self) -> None:
+        scraper = DaumCafeScraper(AppConfig())
+        self.assertFalse(
+            scraper._is_content_image(
+                "https://example.com/member/avatar.png",
+                640,
+                480,
+                "thumb_profile",
+                "",
+            )
+        )
+        self.assertTrue(
+            scraper._is_content_image(
+                "https://t1.daumcdn.net/cafeattach/1R9cj/post-image",
+                640,
+                480,
+                "txc-image",
+                "",
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -51,7 +51,13 @@ def assess_post(db: Database, post_id: int, hamming_threshold: int) -> Assessmen
         reasons.append("글쓴이가 활성 블랙리스트에 있습니다.")
     if duplicate_image_count:
         if different_author_count:
-            score = max(score, min(95, 45 + duplicate_image_count * 15 + different_author_count * 10))
+            if duplicate_image_count == 1 and duplicate_post_count == 1:
+                score = max(score, 45)
+            else:
+                score = max(
+                    score,
+                    min(95, 45 + duplicate_image_count * 15 + different_author_count * 10),
+                )
             reasons.append(
                 f"다른 글쓴이의 과거 게시글과 유사한 이미지 {duplicate_image_count}장이 발견되었습니다."
             )
@@ -63,7 +69,7 @@ def assess_post(db: Database, post_id: int, hamming_threshold: int) -> Assessmen
     if duplicate_post_count >= 2 and different_author_count:
         score = min(99, score + 10)
         reasons.append("둘 이상의 과거 게시글과 이미지가 겹칩니다.")
-    if current_images and duplicate_image_count == len(current_images) and different_author_count:
+    if len(current_images) >= 2 and duplicate_image_count == len(current_images) and different_author_count:
         score = min(99, score + 10)
         reasons.append("수집된 이미지 대부분이 과거 게시글과 겹칩니다.")
     if not reasons:

@@ -55,6 +55,41 @@ def main() -> None:
             )
             db.add_image(new_id, "new.jpg", "", "same", "0" * 16, "0" * 16, 640, 480)
             assessment = assess_post(db, new_id, 8)
+            assert assessment.score < 70
+
+            old_ref_2 = PostRef(
+                "C3Zg",
+                "https://cafe.daum.net/730418/C3Zg/3",
+                "old 2",
+                "C3Zg:3",
+            )
+            new_ref_2 = PostRef(
+                "C3Zg",
+                "https://cafe.daum.net/730418/C3Zg/4",
+                "new 2",
+                "C3Zg:4",
+            )
+            old_id_2 = db.upsert_post(
+                PostDetail(
+                    old_ref_2,
+                    "old 2",
+                    author_name="old 2",
+                    images=[ImageRef("old2a.jpg"), ImageRef("old2b.jpg")],
+                )
+            )
+            db.add_image(old_id_2, "old2a.jpg", "", "same-a", "1" * 16, "1" * 16, 640, 480)
+            db.add_image(old_id_2, "old2b.jpg", "", "same-b", "2" * 16, "2" * 16, 640, 480)
+            new_id_2 = db.upsert_post(
+                PostDetail(
+                    new_ref_2,
+                    "new 2",
+                    author_name="new 2",
+                    images=[ImageRef("new2a.jpg"), ImageRef("new2b.jpg")],
+                )
+            )
+            db.add_image(new_id_2, "new2a.jpg", "", "same-a", "1" * 16, "1" * 16, 640, 480)
+            db.add_image(new_id_2, "new2b.jpg", "", "same-b", "2" * 16, "2" * 16, 640, 480)
+            assessment = assess_post(db, new_id_2, 8)
             assert assessment.score >= 70
         finally:
             db.close()
