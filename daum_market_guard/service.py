@@ -240,7 +240,11 @@ def _post_number(ref: PostRef) -> int | None:
 
 def _looks_missing_error(exc: Exception) -> bool:
     text = str(exc).lower()
-    return "not found" in text or "not a readable post" in text
+    return (
+        "not found" in text
+        or "not a readable post" in text
+        or "resolved to different article" in text
+    )
 
 
 def run_forever(config: AppConfig) -> None:

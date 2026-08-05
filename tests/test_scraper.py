@@ -6,6 +6,8 @@ from daum_market_guard.scraper import find_system_chromium
 from daum_market_guard.scraper import DaumCafeScraper
 from daum_market_guard.scraper import _author_from_article_sections
 from daum_market_guard.scraper import _is_notice_title
+from daum_market_guard.scraper import _post_key_from_url
+from daum_market_guard.scraper import _post_keys_from_text
 from daum_market_guard.scraper import _posted_at_from_article_sections
 from daum_market_guard.scraper import _title_from_article_sections
 
@@ -62,6 +64,29 @@ class ScraperTests(unittest.TestCase):
         )
         self.assertIsNotNone(ref)
         self.assertEqual(ref.post_key, "C3Zg:789")
+
+    def test_post_key_parses_direct_and_legacy_urls(self) -> None:
+        self.assertEqual(
+            _post_key_from_url("C3Zg", "https://cafe.daum.net/730418/C3Zg/12672"),
+            "C3Zg:12672",
+        )
+        self.assertEqual(
+            _post_key_from_url(
+                "C3Zg",
+                "https://cafe.daum.net/_c21_/bbs_read?grpid=1R9cj&fldid=C3Zi&datanum=119",
+            ),
+            "C3Zi:119",
+        )
+
+    def test_post_keys_parse_structured_article_identity_from_html(self) -> None:
+        html = """
+            <script>
+              var cafeInfo = "fldid=C3Zi&datanum=119";
+              var other = {"fldid":"C3Zg","dataid":"12672"};
+            </script>
+        """
+
+        self.assertEqual(_post_keys_from_text("C3Zg", html), {"C3Zi:119", "C3Zg:12672"})
 
     def test_rejects_notice_titles(self) -> None:
         scraper = DaumCafeScraper(AppConfig())

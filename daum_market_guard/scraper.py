@@ -26,6 +26,20 @@ ARTICLE_FUNC_PATTERNS = [
     re.compile(r"['\"](?P<board>[A-Za-z0-9]+)['\"]\s*,\s*['\"]?(?P<id>\d+)['\"]?"),
     re.compile(r"(?P<board>[A-Za-z0-9]+)\D{0,20}(?P<id>\d{2,})"),
 ]
+STRUCTURED_POST_KEY_PATTERNS = [
+    re.compile(
+        r"(?:fldid|board|folderid)['\"]?\s*[:=]\s*['\"]?(?P<board>[A-Za-z0-9]+)"
+        r".{0,300}?"
+        r"(?:dataid|datanum|articleid|bbsid)['\"]?\s*[:=]\s*['\"]?(?P<id>\d+)",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"(?:dataid|datanum|articleid|bbsid)['\"]?\s*[:=]\s*['\"]?(?P<id>\d+)"
+        r".{0,300}?"
+        r"(?:fldid|board|folderid)['\"]?\s*[:=]\s*['\"]?(?P<board>[A-Za-z0-9]+)",
+        re.IGNORECASE | re.DOTALL,
+    ),
+]
 BODY_SELECTORS = [
     "#user_contents",
     ".board_post.tx-content-container",
@@ -248,6 +262,7 @@ class DaumCafeScraper:
         images = self._extract_images_from_page_and_frames(page)
         if not has_post_content:
             raise RuntimeError(f"Post not found or not a readable post: {ref.url}")
+        self._validate_loaded_post_identity(ref, page, body_frames)
         article_sections = self._article_text_sections(body_frames)
         title = (
             _title_from_article_sections(article_sections)
@@ -304,6 +319,53 @@ class DaumCafeScraper:
                     continue
             sections.append((_text_lines(body_text), _text_lines(content_text)))
         return sections
+
+    def _validate_loaded_post_identity(self, ref: PostRef, page: Page, frames: list[Any]) -> None:
+        expected_key = ref.post_key
+        if ":" not in expected_key:
+            return
+        observed = self._observed_post_keys(ref.board_id, page, frames, ref.url)
+        if observed and expected_key not in observed:
+            raise RuntimeError(
+                "Post resolved to different article: "
+                f"expected {expected_key}, observed {', '.join(sorted(observed))}"
+            )
+
+    def _observed_post_keys(
+        self,
+        board_id: str,
+        page: Page,
+        frames: list[Any],
+        requested_url: str,
+    ) -> set[str]:
+        observed: set[str] = set()
+        urls: list[str] = []
+        for frame in frames:
+            urls.append(str(getattr(frame, "url", "") or ""))
+            urls.extend(self._identity_urls_from_frame(frame))
+            try:
+                observed.update(_post_keys_from_text(board_id, frame.content()))
+            except Exception:
+                pass
+        if _clean_url(page.url) != _clean_url(requested_url):
+            urls.append(page.url)
+        for url in urls:
+            key = _post_key_from_url(board_id, url)
+            if key:
+                observed.add(key)
+        return observed
+
+    def _identity_urls_from_frame(self, frame: Any) -> list[str]:
+        script = """
+            () => [
+                ...Array.from(document.querySelectorAll('link[rel="canonical"]')).map((el) => el.href || ''),
+                ...Array.from(document.querySelectorAll('meta[property="og:url"]')).map((el) => el.content || '')
+            ].filter(Boolean)
+        """
+        try:
+            return [str(url) for url in frame.evaluate(script)]
+        except Exception:
+            return []
 
     def _goto_with_login(self, page: Page, url: str) -> None:
         target_url = self._desktop_url(url)
@@ -898,6 +960,54 @@ def _first_query(query: dict[str, list[str]], *keys: str) -> str | None:
         if values:
             return values[0]
     return None
+
+
+def _post_key_from_url(default_board_id: str, href: str) -> str | None:
+    parsed = urlparse(href)
+    query = parse_qs(parsed.query)
+    board_id = _first_query(query, "fldid", "board", "folderid") or default_board_id
+    for key in POST_ID_QUERY_KEYS:
+        if query.get(key):
+            return f"{board_id}:{query[key][0]}"
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if len(path_parts) >= 3 and path_parts[-2].isalnum() and path_parts[-1].isdigit():
+        return f"{path_parts[-2]}:{path_parts[-1]}"
+    for pattern in POST_ID_PATTERNS:
+        match = pattern.search(href)
+        if match and match.groupdict().get("id"):
+            return f"{match.groupdict().get('board') or board_id}:{match.group('id')}"
+    return None
+
+
+def _post_keys_from_text(default_board_id: str, value: str) -> set[str]:
+    keys: set[str] = set()
+    for chunk in _identity_text_chunks(value):
+        for pattern in STRUCTURED_POST_KEY_PATTERNS:
+            for match in pattern.finditer(chunk):
+                board_id = match.groupdict().get("board") or default_board_id
+                post_id = match.groupdict().get("id")
+                if board_id and post_id:
+                    keys.add(f"{board_id}:{post_id}")
+    return keys
+
+
+def _identity_text_chunks(value: str) -> list[str]:
+    text = value or ""
+    chunks = re.findall(r"\{[^{}]{0,500}\}", text)
+    chunks.extend(
+        match.group(1)
+        for match in re.finditer(
+            r"['\"]([^'\"]{0,500}(?:fldid|board|folderid|dataid|datanum|articleid|bbsid)[^'\"]{0,500})['\"]",
+            text,
+            re.IGNORECASE,
+        )
+    )
+    return chunks
+
+
+def _clean_url(value: str) -> str:
+    parsed = urlparse(value)
+    return parsed._replace(fragment="").geturl()
 
 
 def find_system_chromium() -> str | None:
