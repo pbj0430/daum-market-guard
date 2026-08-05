@@ -507,7 +507,7 @@ INDEX_HTML = r"""<!doctype html>
       if (e.event === 'post_started') return `${p.index}/${p.total} ${p.post_key || '-'} ${p.title} | ${p.url}`;
       if (e.event === 'post_timing') return `${p.post_key || '-'} ${p.phase}: ${p.elapsed_ms}ms ${timingExtra(p)}`;
       if (e.event === 'post_skipped') return `${p.index}/${p.total} ${p.post_key} ${p.title}`;
-      if (e.event === 'post_missing') return `${p.index}/${p.total} ${p.post_key}`;
+      if (e.event === 'post_missing') return `${p.index}/${p.total} ${p.post_key} ${p.error || ''}`;
       if (e.event === 'image_started') return `${p.post_key || '-'} image ${p.index}/${p.total} start`;
       if (e.event === 'image_done') return `${p.post_key || '-'} image ${p.index}/${p.total} ${p.status}: total ${p.total_ms}ms, download ${p.download_ms || '-'}ms, hash ${p.fingerprint_ms || '-'}ms, file ${p.file_save_ms || '-'}ms, db ${p.db_add_ms || '-'}ms`;
       if (e.event === 'post_done') return `${p.post_key || '-'} score ${p.score}, images ${p.stored_images}, elapsed ${p.elapsed_ms || '-'}ms, author ${p.author || '-'}, ${p.title || ''}`;

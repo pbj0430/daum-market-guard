@@ -48,10 +48,28 @@ class DetectorTests(unittest.TestCase):
                 new_id = db.upsert_post(_detail("C3Zg", 2, "new"))
                 db.add_image(new_id, "new.jpg", "", "same", "0" * 16, "0" * 16, 640, 480)
                 assessment = assess_post(db, new_id, 8)
+                self.assertEqual(assessment.score, 45)
                 self.assertLess(assessment.score, 70)
                 self.assertEqual(assessment.duplicate_image_count, 1)
                 self.assertEqual(assessment.different_author_duplicate_count, 1)
                 self.assertIn("content_text", db.get_post(new_id).keys())
+            finally:
+                db.close()
+
+    def test_single_similar_only_different_author_duplicate_scores_low(self) -> None:
+        with TemporaryDirectory() as directory:
+            db = Database(Path(directory) / "test.sqlite3")
+            try:
+                old_id = db.upsert_post(_detail("C3Zg", 1, "old"))
+                db.add_image(old_id, "old.jpg", "", "old-bytes", "0" * 16, "0" * 16, 640, 480)
+                new_id = db.upsert_post(_detail("C3Zg", 2, "new"))
+                db.add_image(new_id, "new.jpg", "", "new-bytes", "0" * 15 + "1", "0" * 15 + "1", 640, 480)
+
+                assessment = assess_post(db, new_id, 8)
+
+                self.assertEqual(assessment.score, 25)
+                self.assertEqual(assessment.duplicate_image_count, 1)
+                self.assertEqual(assessment.different_author_duplicate_count, 1)
             finally:
                 db.close()
 

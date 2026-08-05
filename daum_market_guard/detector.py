@@ -14,6 +14,7 @@ def assess_post(db: Database, post_id: int, hamming_threshold: int) -> Assessmen
     blacklisted = db.author_is_blacklisted(str(post["author_name"]), str(post["author_id"]))
 
     matched_image_ids: set[int] = set()
+    exact_matched_image_ids: set[int] = set()
     matched_posts: dict[int, str] = {}
     same_author_posts: set[int] = set()
     different_author_posts: set[int] = set()
@@ -29,6 +30,8 @@ def assess_post(db: Database, post_id: int, hamming_threshold: int) -> Assessmen
             if not exact and not similar:
                 continue
             matched_image_ids.add(int(image["id"]))
+            if exact:
+                exact_matched_image_ids.add(int(image["id"]))
             matched_posts[prior.post_id] = prior.post_url
             author_relation = _author_relation(
                 str(post["author_name"]),
@@ -42,6 +45,7 @@ def assess_post(db: Database, post_id: int, hamming_threshold: int) -> Assessmen
                 different_author_posts.add(prior.post_id)
 
     duplicate_image_count = len(matched_image_ids)
+    exact_duplicate_image_count = len(exact_matched_image_ids)
     duplicate_post_count = len(matched_posts)
     same_author_count = len(same_author_posts)
     different_author_count = len(different_author_posts)
@@ -53,7 +57,7 @@ def assess_post(db: Database, post_id: int, hamming_threshold: int) -> Assessmen
     if duplicate_image_count:
         if different_author_count:
             if duplicate_image_count == 1 and duplicate_post_count == 1:
-                score = max(score, 45)
+                score = max(score, 45 if exact_duplicate_image_count else 25)
             else:
                 score = max(
                     score,

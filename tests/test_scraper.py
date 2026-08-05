@@ -91,6 +91,15 @@ class ScraperTests(unittest.TestCase):
 
         self.assertEqual(_post_keys_from_text("C3Zg", html), {"C3Zi:119", "C3Zg:12672"})
 
+    def test_post_keys_parse_current_article_url_from_markup(self) -> None:
+        html = """
+            <a href="https://cafe.daum.net/730418/C3Zg/12673?svc=cafeapi" class="btn_copyurl">
+              https://cafe.daum.net/730418/C3Zg/12673?svc=cafeapi
+            </a>
+        """
+
+        self.assertEqual(_post_keys_from_text("C3Zi", html), {"C3Zg:12673"})
+
     def test_rejects_view_count_as_article_title(self) -> None:
         self.assertTrue(_looks_non_article_title("조회 205"))
         self.assertTrue(_looks_non_article_title("추천 0"))

@@ -4,6 +4,7 @@ import re
 import shutil
 import time
 from dataclasses import dataclass
+from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -1181,6 +1182,10 @@ def _post_key_from_url(default_board_id: str, href: str) -> str | None:
 
 def _post_keys_from_text(default_board_id: str, value: str) -> set[str]:
     keys: set[str] = set()
+    for url in _identity_urls_from_text(value):
+        key = _post_key_from_url(default_board_id, url)
+        if key:
+            keys.add(key)
     for chunk in _identity_text_chunks(value):
         for pattern in STRUCTURED_POST_KEY_PATTERNS:
             for match in pattern.finditer(chunk):
@@ -1189,6 +1194,24 @@ def _post_keys_from_text(default_board_id: str, value: str) -> set[str]:
                 if board_id and post_id:
                     keys.add(f"{board_id}:{post_id}")
     return keys
+
+
+def _identity_urls_from_text(value: str) -> list[str]:
+    text = unescape(value or "")
+    urls: list[str] = []
+    patterns = (
+        r"https?://cafe\.daum\.net/[^\s\"'<>]+",
+        r"/(?:_c21_/bbs_read|[A-Za-z0-9]+/[A-Za-z0-9]+/\d+)[^\s\"'<>]*",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, text):
+            url = match.group(0)
+            if url.startswith("/"):
+                url = f"https://cafe.daum.net{url}"
+            if "/bbs_list" in url:
+                continue
+            urls.append(url)
+    return urls
 
 
 def _identity_text_chunks(value: str) -> list[str]:

@@ -123,6 +123,7 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
                                     "total": len(refs),
                                     "post_key": ref.post_key,
                                     "url": ref.url,
+                                    "error": str(exc),
                                 },
                             )
                             continue
@@ -569,7 +570,7 @@ def _print_progress(event: str, payload: dict[str, Any]) -> None:
         if _should_print_skip(payload):
             print(
                 f"[scan] missing {payload['index']}/{payload['total']}: "
-                f"{payload['post_key']} {payload['url']}",
+                f"{payload['post_key']} {payload['url']} error={payload.get('error', '')}",
                 flush=True,
             )
     elif event == "image_started":
