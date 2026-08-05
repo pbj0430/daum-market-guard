@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 from PIL import UnidentifiedImageError
 
@@ -11,7 +12,7 @@ from .config import AppConfig
 from .db import Database
 from .detector import assess_post, maybe_blacklist
 from .hashing import fingerprint_image
-from .models import PostDetail
+from .models import PostDetail, PostRef
 from .scraper import DaumCafeScraper, ScrapeStats, save_image_bytes
 
 
@@ -37,6 +38,7 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
         {
             "boards": len(config.boards),
             "headless": config.headless,
+            "strategy": config.scan_strategy,
             "mobile_fallback": config.allow_mobile_fallback,
             "data_dir": str(config.data_dir),
             "profile": str(config.user_data_dir),
@@ -47,7 +49,7 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
             for board in config.boards:
                 stats.board_count += 1
                 _emit(progress, "board_started", {"board": board.name, "url": board.url})
-                refs = scraper.collect_board_posts(board, progress=progress)
+                refs = _collect_post_refs(config, db, scraper, board, progress)
                 stats.post_refs += len(refs)
                 _emit(
                     progress,
@@ -64,17 +66,7 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
                             {"board": board.name, "error": str(exc)},
                         )
                 for index, ref in enumerate(refs, start=1):
-                    _emit(
-                        progress,
-                        "post_started",
-                        {
-                            "board": board.name,
-                            "index": index,
-                            "total": len(refs),
-                            "title": ref.title,
-                            "url": ref.url,
-                        },
-                    )
+                    post_number = _post_number(ref)
                     if not config.rescan_existing_posts and db.post_key_exists(ref.post_key):
                         _emit(
                             progress,
@@ -88,9 +80,47 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
                             },
                         )
                         continue
+                    if post_number is not None and db.missing_post_exists(ref.board_id, post_number):
+                        _emit(
+                            progress,
+                            "post_skipped",
+                            {
+                                "board": board.name,
+                                "index": index,
+                                "total": len(refs),
+                                "post_key": ref.post_key,
+                                "title": "known missing",
+                            },
+                        )
+                        continue
+                    _emit(
+                        progress,
+                        "post_started",
+                        {
+                            "board": board.name,
+                            "index": index,
+                            "total": len(refs),
+                            "title": ref.title,
+                            "url": ref.url,
+                        },
+                    )
                     try:
                         detail = scraper.collect_post_detail(ref)
                     except Exception as exc:
+                        if post_number is not None and _looks_missing_error(exc):
+                            db.mark_missing_post(ref.board_id, post_number)
+                            _emit(
+                                progress,
+                                "post_missing",
+                                {
+                                    "board": board.name,
+                                    "index": index,
+                                    "total": len(refs),
+                                    "post_key": ref.post_key,
+                                    "url": ref.url,
+                                },
+                            )
+                            continue
                         _emit(
                             progress,
                             "post_failed",
@@ -141,6 +171,76 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
         raise
     finally:
         db.close()
+
+
+def _collect_post_refs(
+    config: AppConfig,
+    db: Database,
+    scraper: DaumCafeScraper,
+    board,
+    progress: ProgressCallback | None,
+) -> list[PostRef]:
+    if config.scan_strategy != "direct_numbers":
+        return scraper.collect_board_posts(board, progress=progress)
+
+    latest_refs = scraper.collect_board_posts(board, progress=progress)
+    latest_number = max((_post_number(ref) or 0 for ref in latest_refs), default=0)
+    saved_max = db.max_post_number(board.board_id)
+    if latest_number <= 0:
+        _emit(
+            progress,
+            "direct_scan_range",
+            {"board": board.name, "latest": 0, "saved_max": saved_max, "count": 0},
+        )
+        return []
+
+    start = latest_number
+    stop = max(1, config.direct_scan_min_post_id)
+    numbers = list(range(start, stop - 1, -1))
+    if config.direct_scan_limit_per_board > 0:
+        numbers = numbers[: config.direct_scan_limit_per_board]
+    _emit(
+        progress,
+        "direct_scan_range",
+        {
+            "board": board.name,
+            "latest": latest_number,
+            "saved_max": saved_max,
+            "stop": stop,
+            "count": len(numbers),
+            "limit": config.direct_scan_limit_per_board,
+        },
+    )
+    cafe_id = _direct_cafe_id(config, board)
+    return [
+        PostRef(
+            board_id=board.board_id,
+            url=f"https://cafe.daum.net/{cafe_id}/{board.board_id}/{number}",
+            title=f"{board.board_id} #{number}",
+            post_key=f"{board.board_id}:{number}",
+        )
+        for number in numbers
+    ]
+
+
+def _direct_cafe_id(config: AppConfig, board) -> str:
+    for url in (board.url, config.cafe_url):
+        path = [part for part in urlparse(url).path.split("/") if part]
+        if path and path[0] != "_c21_":
+            return path[0]
+    return "730418"
+
+
+def _post_number(ref: PostRef) -> int | None:
+    try:
+        return int(ref.post_key.rsplit(":", 1)[1])
+    except (IndexError, ValueError):
+        return None
+
+
+def _looks_missing_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "not found" in text or "not a readable post" in text
 
 
 def run_forever(config: AppConfig) -> None:
@@ -219,6 +319,7 @@ def _print_progress(event: str, payload: dict[str, Any]) -> None:
         print(
             "[scan] started: "
             f"boards={payload['boards']} headless={payload['headless']} "
+            f"strategy={payload.get('strategy', 'board_list')} "
             f"mobile_fallback={payload['mobile_fallback']} "
             f"profile={payload['profile']} data={payload['data_dir']}",
             flush=True,
@@ -268,12 +369,30 @@ def _print_progress(event: str, payload: dict[str, Any]) -> None:
             f"[scan] post {payload['index']}/{payload['total']}: {payload['title']}",
             flush=True,
         )
-    elif event == "post_skipped":
+    elif event == "direct_scan_range":
+        limit = payload.get("limit")
+        limit_text = "all" if not limit else str(limit)
         print(
-            f"[scan] skipped existing {payload['index']}/{payload['total']}: "
-            f"{payload['post_key']} {payload['title']}",
+            "[scan] direct range: "
+            f"board={payload['board']} latest={payload['latest']} "
+            f"saved_max={payload.get('saved_max', 0)} stop={payload.get('stop', '-')} "
+            f"numbers={payload['count']} limit={limit_text}",
             flush=True,
         )
+    elif event == "post_skipped":
+        if _should_print_skip(payload):
+            print(
+                f"[scan] skipped {payload['index']}/{payload['total']}: "
+                f"{payload['post_key']} {payload['title']}",
+                flush=True,
+            )
+    elif event == "post_missing":
+        if _should_print_skip(payload):
+            print(
+                f"[scan] missing {payload['index']}/{payload['total']}: "
+                f"{payload['post_key']} {payload['url']}",
+                flush=True,
+            )
     elif event == "post_done":
         print(
             f"[scan] saved: score={payload['score']} images={payload['stored_images']} "
@@ -326,3 +445,9 @@ def _short(value: Any, max_length: int) -> str:
     if len(text) <= max_length:
         return text
     return f"{text[: max_length - 3]}..."
+
+
+def _should_print_skip(payload: dict[str, Any]) -> bool:
+    index = int(payload.get("index") or 0)
+    total = int(payload.get("total") or 0)
+    return index <= 5 or index == total or index % 100 == 0

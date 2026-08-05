@@ -92,6 +92,13 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_images_dhash ON images(dhash);
             CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_name, author_id);
             CREATE INDEX IF NOT EXISTS idx_assessments_score ON assessments(score);
+
+            CREATE TABLE IF NOT EXISTS missing_posts (
+                board_id TEXT NOT NULL,
+                post_number INTEGER NOT NULL,
+                last_checked_at TEXT NOT NULL,
+                PRIMARY KEY (board_id, post_number)
+            );
             """
         )
         self._ensure_column("posts", "content_text", "TEXT NOT NULL DEFAULT ''")
@@ -155,6 +162,42 @@ class Database:
             (post_key,),
         ).fetchone()
         return row is not None
+
+    def missing_post_exists(self, board_id: str, post_number: int) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM missing_posts WHERE board_id = ? AND post_number = ?",
+            (board_id, post_number),
+        ).fetchone()
+        return row is not None
+
+    def mark_missing_post(self, board_id: str, post_number: int) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO missing_posts (board_id, post_number, last_checked_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(board_id, post_number) DO UPDATE SET
+                last_checked_at = excluded.last_checked_at
+            """,
+            (board_id, post_number, utc_now()),
+        )
+        self.conn.commit()
+
+    def max_post_number(self, board_id: str) -> int:
+        rows = self.conn.execute(
+            "SELECT post_key FROM posts WHERE board_id = ?",
+            (board_id,),
+        ).fetchall()
+        maximum = 0
+        prefix = f"{board_id}:"
+        for row in rows:
+            post_key = str(row["post_key"])
+            if not post_key.startswith(prefix):
+                continue
+            try:
+                maximum = max(maximum, int(post_key.rsplit(":", 1)[1]))
+            except ValueError:
+                continue
+        return maximum
 
     def add_image(
         self,

@@ -101,8 +101,11 @@ class AppConfig:
     )
     allow_mobile_fallback: bool = False
     browser_executable_path: str | None = None
+    scan_strategy: str = "direct_numbers"
     max_pages_per_board: int = 1
     max_posts_per_board_page: int = 40
+    direct_scan_min_post_id: int = 1
+    direct_scan_limit_per_board: int = 0
     rescan_existing_posts: bool = False
     image_timeout_seconds: int = 20
     duplicate_hamming_threshold: int = 8
@@ -192,8 +195,11 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
         user_agent=str(data.get("user_agent", AppConfig.user_agent)),
         allow_mobile_fallback=bool(data.get("allow_mobile_fallback", False)),
         browser_executable_path=_optional_str(data.get("browser_executable_path")),
+        scan_strategy=str(data.get("scan_strategy", "direct_numbers")),
         max_pages_per_board=int(data.get("max_pages_per_board", 1)),
         max_posts_per_board_page=int(data.get("max_posts_per_board_page", 40)),
+        direct_scan_min_post_id=int(data.get("direct_scan_min_post_id", 1)),
+        direct_scan_limit_per_board=int(data.get("direct_scan_limit_per_board", 0)),
         rescan_existing_posts=bool(data.get("rescan_existing_posts", False)),
         image_timeout_seconds=int(data.get("image_timeout_seconds", 20)),
         duplicate_hamming_threshold=int(data.get("duplicate_hamming_threshold", 8)),

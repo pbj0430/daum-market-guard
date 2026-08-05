@@ -16,8 +16,11 @@ user_data_dir = "browser-profile"
 # Example:
 # browser_executable_path = "/usr/bin/chromium-browser"
 
+scan_strategy = "direct_numbers" # direct_numbers or board_list
 max_pages_per_board = 1
-max_posts_per_board_page = 40
+max_posts_per_board_page = 40 # used to detect the latest number from the list
+direct_scan_min_post_id = 1
+direct_scan_limit_per_board = 0 # 0 scans every number from latest down to direct_scan_min_post_id
 rescan_existing_posts = false
 image_timeout_seconds = 20
 duplicate_hamming_threshold = 8

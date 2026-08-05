@@ -241,8 +241,13 @@ class DaumCafeScraper:
             ],
         )
         posted_at = self._first_text(page, ["time", ".date", ".txt_date", "[class*='date']"])
+        has_post_content = self._has_post_content(page)
         content_text = self._content_text(page)
         images = self._extract_images_from_page_and_frames(page)
+        if not has_post_content and _looks_cafe_page_title(title):
+            raise RuntimeError(f"Post not found or not a readable post: {ref.url}")
+        if _looks_cafe_page_title(title):
+            title = ref.title
         return PostDetail(
             ref=ref,
             title=title or ref.title,
@@ -252,6 +257,16 @@ class DaumCafeScraper:
             content_text=content_text,
             images=images,
         )
+
+    def _has_post_content(self, page: Page) -> bool:
+        for frame in page.frames:
+            for selector in CONTENT_SELECTORS:
+                try:
+                    if frame.locator(selector).count() > 0:
+                        return True
+                except Exception:
+                    continue
+        return False
 
     def _goto_with_login(self, page: Page, url: str) -> None:
         target_url = self._desktop_url(url)
@@ -751,6 +766,15 @@ def _safe_title(page: Page) -> str:
         return page.title()
     except Exception:
         return ""
+
+
+def _looks_cafe_page_title(value: str) -> bool:
+    text = _clean_text(value)
+    if not text:
+        return False
+    if "Daum" not in text:
+        return False
+    return len(text) <= 120
 
 
 def _emit(progress: Any | None, event: str, payload: dict[str, Any]) -> None:
