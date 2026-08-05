@@ -182,7 +182,24 @@ def _print_suspects(config, min_score: int) -> None:
         if reasons:
             print(f"      reason={'; '.join(reasons)}")
         if links:
-            print(f"      sources={', '.join(links[:5])}")
+            print(f"      sources={', '.join(_source_url(link) for link in links[:5])}")
+            for link in links[:5]:
+                if isinstance(link, dict):
+                    print(
+                        "      match="
+                        f"current_image={link.get('current_image_id')} "
+                        f"source_image={link.get('source_image_id')} "
+                        f"source={link.get('source_post_key')} "
+                        f"exact={link.get('exact')} "
+                        f"dhash={link.get('dhash_distance')} "
+                        f"ahash={link.get('ahash_distance')}"
+                    )
+
+
+def _source_url(source: object) -> str:
+    if isinstance(source, dict):
+        return str(source.get("source_url") or "")
+    return str(source or "")
 
 
 def _blacklist(config, args) -> None:

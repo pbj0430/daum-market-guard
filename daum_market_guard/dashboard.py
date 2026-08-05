@@ -439,6 +439,10 @@ INDEX_HTML = r"""<!doctype html>
     .meta, .content, .reasons, .links { color:var(--muted); font-size:12px; line-height:1.45; }
     .content { color:#344054; margin-top:7px; white-space:pre-wrap; max-height:66px; overflow:hidden; }
     .links a { color:#075985; margin-right:8px; }
+    .matches { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+    .match { display:grid; grid-template-columns:42px 42px minmax(96px,1fr); gap:6px; align-items:center; max-width:260px; padding:5px; border:1px solid var(--line); border-radius:6px; background:#fafafa; }
+    .match img { width:42px; height:42px; object-fit:cover; border-radius:4px; border:1px solid var(--line); background:#f2f4f7; }
+    .match-meta { color:var(--muted); font-size:11px; line-height:1.35; overflow:hidden; }
     .thumbs { display:grid; grid-template-columns:repeat(2,42px); grid-auto-rows:42px; gap:6px; align-content:start; }
     .thumbs img { width:42px; height:42px; object-fit:cover; border-radius:4px; border:1px solid var(--line); background:#f2f4f7; }
     .gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(72px,1fr)); gap:8px; padding:10px; max-height:340px; overflow:auto; }
@@ -558,7 +562,11 @@ INDEX_HTML = r"""<!doctype html>
       const posts = await getJson('/api/posts?limit=100');
       document.getElementById('posts').innerHTML = (posts.posts || []).length ? (posts.posts || []).map(p => {
         const reasons = (p.reasons || []).map(esc).join(' ');
-        const links = (p.sources || []).slice(0,3).map((u,i) => `<a target="_blank" href="${esc(u)}">source ${i+1}</a>`).join('');
+        const links = (p.sources || []).slice(0,3).map((s,i) => {
+          const u = sourceUrl(s);
+          return u ? `<a target="_blank" href="${esc(u)}">source ${i+1}</a>` : '';
+        }).join('');
+        const matches = (p.sources || []).filter(s => s && typeof s === 'object').slice(0,6).map(matchHtml).join('');
         return `<div class="post">
           <div class="score ${scoreClass(p.score)}">${p.score || 0}</div>
           <div>
@@ -567,6 +575,7 @@ INDEX_HTML = r"""<!doctype html>
             <div class="content">${esc(short(p.content_text, 360))}</div>
             <div class="reasons">${reasons}</div>
             <div class="links">${links}</div>
+            <div class="matches">${matches}</div>
           </div>
           <div class="thumbs" data-post="${p.id}"></div>
         </div>`;
@@ -578,6 +587,19 @@ INDEX_HTML = r"""<!doctype html>
       });
       const images = await getJson('/api/images/recent?limit=48');
       document.getElementById('gallery').innerHTML = (images.images || []).length ? (images.images || []).map(img => `<a target="_blank" href="${esc(img.post_url)}"><img title="${esc(img.title)}" src="/image/${img.id}"></a>`).join('') : '<div class="empty">No images.</div>';
+    }
+    function sourceUrl(s) {
+      return s && typeof s === 'object' ? (s.source_url || '') : String(s || '');
+    }
+    function matchHtml(s) {
+      return `<div class="match">
+        <img title="current ${esc(s.current_image_id)}" src="/image/${esc(s.current_image_id)}">
+        <img title="source ${esc(s.source_image_id)}" src="/image/${esc(s.source_image_id)}">
+        <div class="match-meta">
+          <a target="_blank" href="${esc(s.source_url || '')}">${esc(s.source_post_key || 'source')}</a><br>
+          ${s.exact ? 'exact' : 'similar'} d=${esc(s.dhash_distance)} a=${esc(s.ahash_distance)} ${esc(s.author_relation || '')}
+        </div>
+      </div>`;
     }
     refresh();
     setInterval(refresh, 3000);

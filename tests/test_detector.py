@@ -52,6 +52,10 @@ class DetectorTests(unittest.TestCase):
                 self.assertLess(assessment.score, 70)
                 self.assertEqual(assessment.duplicate_image_count, 1)
                 self.assertEqual(assessment.different_author_duplicate_count, 1)
+                self.assertEqual(len(assessment.source_links), 1)
+                self.assertEqual(assessment.source_links[0]["current_image_id"], 2)
+                self.assertEqual(assessment.source_links[0]["source_image_id"], 1)
+                self.assertTrue(assessment.source_links[0]["exact"])
                 self.assertIn("content_text", db.get_post(new_id).keys())
             finally:
                 db.close()

@@ -611,6 +611,13 @@ def _print_board_debug(payload: dict[str, Any]) -> None:
         f"unsupported={payload.get('unsupported_browser')}",
         flush=True,
     )
+    if not payload.get("accepted_count"):
+        print(
+            "[scan] board unavailable: "
+            "latest post number could not be detected. "
+            "Check cafe membership level, board id, and whether Daum redirected to the cafe home.",
+            flush=True,
+        )
     for report in payload.get("url_reports", []):
         print(
             "[scan]   page: "

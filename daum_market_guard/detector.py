@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import defaultdict
+from typing import Any
 
 from .db import Database
 from .hashing import hamming_hex
@@ -19,14 +19,17 @@ def assess_post(db: Database, post_id: int, hamming_threshold: int) -> Assessmen
     matched_posts: dict[int, str] = {}
     same_author_posts: set[int] = set()
     different_author_posts: set[int] = set()
+    match_details: list[dict[str, Any]] = []
     reasons: list[str] = []
 
     for image in current_images:
         for prior in prior_images:
+            dhash_distance = hamming_hex(str(image["dhash"]), prior.dhash)
+            ahash_distance = hamming_hex(str(image["ahash"]), prior.ahash)
             exact = image["sha256"] and image["sha256"] == prior.sha256
             similar = (
-                hamming_hex(str(image["dhash"]), prior.dhash) <= effective_hamming_threshold
-                and hamming_hex(str(image["ahash"]), prior.ahash) <= effective_hamming_threshold
+                dhash_distance <= effective_hamming_threshold
+                and ahash_distance <= effective_hamming_threshold
             )
             if not exact and not similar:
                 continue
@@ -44,6 +47,20 @@ def assess_post(db: Database, post_id: int, hamming_threshold: int) -> Assessmen
                 same_author_posts.add(prior.post_id)
             elif author_relation == "different":
                 different_author_posts.add(prior.post_id)
+            match_details.append(
+                {
+                    "source_url": prior.post_url,
+                    "source_post_key": prior.post_key,
+                    "source_title": prior.title,
+                    "source_author": prior.author_name or prior.author_id,
+                    "current_image_id": int(image["id"]),
+                    "source_image_id": prior.id,
+                    "exact": bool(exact),
+                    "dhash_distance": dhash_distance,
+                    "ahash_distance": ahash_distance,
+                    "author_relation": author_relation,
+                }
+            )
 
     duplicate_image_count = len(matched_image_ids)
     exact_duplicate_image_count = len(exact_matched_image_ids)
@@ -80,7 +97,7 @@ def assess_post(db: Database, post_id: int, hamming_threshold: int) -> Assessmen
     if not reasons:
         reasons.append("현재 기준으로 과거 이미지 재사용 신호가 약합니다.")
 
-    grouped_links = _stable_links(matched_posts.values())
+    grouped_links = _stable_match_details(match_details)
     return Assessment(
         post_id=post_id,
         post_key=str(post["post_key"]),
@@ -124,8 +141,13 @@ def _author_relation(
     return "unknown"
 
 
-def _stable_links(links: object) -> list[str]:
-    seen: dict[str, None] = {}
-    for link in links:
-        seen.setdefault(str(link), None)
-    return list(seen.keys())
+def _stable_match_details(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[int, int]] = set()
+    stable: list[dict[str, Any]] = []
+    for match in matches:
+        key = (int(match["current_image_id"]), int(match["source_image_id"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        stable.append(match)
+    return stable

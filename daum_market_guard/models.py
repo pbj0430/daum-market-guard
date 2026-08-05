@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 
 def utc_now() -> str:
@@ -58,5 +59,5 @@ class Assessment:
     duplicate_post_count: int
     same_author_duplicate_count: int
     different_author_duplicate_count: int
-    source_links: list[str]
+    source_links: list[Any]
     reasons: list[str]

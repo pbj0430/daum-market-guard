@@ -14,7 +14,8 @@ else:
 
 
 def render_comment(template: str, row) -> str:
-    links = json.loads(row["candidate_posts_json"] or "[]")
+    links = [_source_url(source) for source in json.loads(row["candidate_posts_json"] or "[]")]
+    links = [link for link in links if link]
     source_links = ", ".join(links[:3]) if links else "없음"
     return template.format(
         score=row["score"],
@@ -26,6 +27,12 @@ def render_comment(template: str, row) -> str:
         author_name=row["author_name"],
         author_id=row["author_id"],
     ).strip()
+
+
+def _source_url(source: object) -> str:
+    if isinstance(source, dict):
+        return str(source.get("source_url") or "")
+    return str(source or "")
 
 
 def process_pending_comments(config: AppConfig, db: Database) -> int:
