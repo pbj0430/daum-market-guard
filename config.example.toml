@@ -26,6 +26,15 @@ image_timeout_seconds = 8
 duplicate_hamming_threshold = 4
 blacklist_score_threshold = 90
 
+# Use this when Daum blocks or redirects the board list and the latest post
+# number cannot be detected automatically. The scanner will start at this
+# number and go down by one.
+[direct_scan_start_post_ids]
+# C3Zg = 12673
+# C3Zi = 2061
+# TyYz = 205
+# KykD = 1844
+
 [login]
 # Optional. If both values are set, scan/login will automatically sign in again
 # when Daum/Kakao sends the browser to a login page.

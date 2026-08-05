@@ -106,6 +106,7 @@ class AppConfig:
     max_posts_per_board_page: int = 40
     direct_scan_min_post_id: int = 1
     direct_scan_limit_per_board: int = 0
+    direct_scan_start_post_ids: dict[str, int] = field(default_factory=dict)
     rescan_existing_posts: bool = False
     image_timeout_seconds: int = 8
     duplicate_hamming_threshold: int = 4
@@ -181,6 +182,16 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
             selectors_raw.get("comment_submit", SelectorConfig.comment_submit)
         ),
     )
+    direct_scan_start_post_ids_raw = (
+        data.get("direct_scan_start_post_ids")
+        or data.get("direct_scan_latest_post_ids")
+        or {}
+    )
+    direct_scan_start_post_ids = {
+        str(board_id): int(number)
+        for board_id, number in direct_scan_start_post_ids_raw.items()
+        if int(number) > 0
+    }
 
     return AppConfig(
         cafe_url=str(data.get("cafe_url", "https://cafe.daum.net/730418")),
@@ -200,6 +211,7 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
         max_posts_per_board_page=int(data.get("max_posts_per_board_page", 40)),
         direct_scan_min_post_id=int(data.get("direct_scan_min_post_id", 1)),
         direct_scan_limit_per_board=int(data.get("direct_scan_limit_per_board", 0)),
+        direct_scan_start_post_ids=direct_scan_start_post_ids,
         rescan_existing_posts=bool(data.get("rescan_existing_posts", False)),
         image_timeout_seconds=int(data.get("image_timeout_seconds", 8)),
         duplicate_hamming_threshold=int(data.get("duplicate_hamming_threshold", 4)),

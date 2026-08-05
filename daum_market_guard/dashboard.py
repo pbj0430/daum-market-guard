@@ -503,7 +503,7 @@ INDEX_HTML = r"""<!doctype html>
     function eventBody(e) {
       const p = e.payload || {};
       if (e.event === 'scan_started') return `boards ${p.boards}, strategy ${p.strategy || '-'}, profile ${p.profile}`;
-      if (e.event === 'direct_scan_range') return `${p.board}: latest ${p.latest}, saved max ${p.saved_max || 0}, stop ${p.stop || '-'}, numbers ${p.count}, limit ${p.limit || 'all'}`;
+      if (e.event === 'direct_scan_range') return `${p.board}: latest ${p.latest}, detected ${p.detected_latest || 0}, configured ${p.configured_start || 0}, saved max ${p.saved_max || 0}, stop ${p.stop || '-'}, numbers ${p.count}, limit ${p.limit || 'all'}`;
       if (e.event === 'board_started') return `${p.board} | ${p.url}`;
       if (e.event === 'board_page_opening') return `page ${p.page}: ${p.url}`;
       if (e.event === 'board_page_loaded') return `accepted ${p.accepted_count}/${p.link_count}, frames ${p.frame_count}, final ${p.page_url}`;

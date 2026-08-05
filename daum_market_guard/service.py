@@ -227,14 +227,27 @@ def _collect_post_refs(
     if config.scan_strategy != "direct_numbers":
         return scraper.collect_board_posts(board, progress=progress)
 
-    latest_refs = scraper.collect_board_posts(board, progress=progress)
-    latest_number = max((_post_number(ref) or 0 for ref in latest_refs), default=0)
+    configured_start = config.direct_scan_start_post_ids.get(board.board_id, 0)
+    latest_refs = (
+        []
+        if configured_start > 0
+        else scraper.collect_board_posts(board, progress=progress)
+    )
+    detected_latest = max((_post_number(ref) or 0 for ref in latest_refs), default=0)
+    latest_number = max(detected_latest, configured_start)
     saved_max = db.max_post_number(board.board_id)
     if latest_number <= 0:
         _emit(
             progress,
             "direct_scan_range",
-            {"board": board.name, "latest": 0, "saved_max": saved_max, "count": 0},
+            {
+                "board": board.name,
+                "latest": 0,
+                "detected_latest": detected_latest,
+                "configured_start": configured_start,
+                "saved_max": saved_max,
+                "count": 0,
+            },
         )
         return []
 
@@ -249,6 +262,8 @@ def _collect_post_refs(
         {
             "board": board.name,
             "latest": latest_number,
+            "detected_latest": detected_latest,
+            "configured_start": configured_start,
             "saved_max": saved_max,
             "stop": stop,
             "count": len(numbers),
@@ -555,6 +570,8 @@ def _print_progress(event: str, payload: dict[str, Any]) -> None:
         print(
             "[scan] direct range: "
             f"board={payload['board']} latest={payload['latest']} "
+            f"detected={payload.get('detected_latest', 0)} "
+            f"configured={payload.get('configured_start', 0)} "
             f"saved_max={payload.get('saved_max', 0)} stop={payload.get('stop', '-')} "
             f"numbers={payload['count']} limit={limit_text}",
             flush=True,
