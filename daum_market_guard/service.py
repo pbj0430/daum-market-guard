@@ -247,6 +247,7 @@ def _collect_post_refs(
                 "configured_start": configured_start,
                 "saved_max": saved_max,
                 "count": 0,
+                "reason": "no_detected_or_configured_start",
             },
         )
         return []
@@ -576,6 +577,12 @@ def _print_progress(event: str, payload: dict[str, Any]) -> None:
             f"numbers={payload['count']} limit={limit_text}",
             flush=True,
         )
+        if payload.get("reason") == "no_detected_or_configured_start":
+            print(
+                "[scan] direct range blocked: no latest number was detected and "
+                "[direct_scan_start_post_ids] has no value for this board id.",
+                flush=True,
+            )
     elif event == "post_skipped":
         if _should_print_skip(payload):
             print(
