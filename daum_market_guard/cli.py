@@ -4,6 +4,7 @@ import argparse
 import json
 import shutil
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from .commenter import process_pending_comments
@@ -25,6 +26,7 @@ def main(argv: list[str] | None = None) -> None:
     scan = subparsers.add_parser("scan", help="run one scan")
     scan.add_argument("--quiet", action="store_true", help="hide per-post progress")
     scan.add_argument("--limit-per-board", type=int, default=None, help="limit direct-number scan count per board")
+    scan.add_argument("--probe-ahead", type=int, default=None, help="check this many numbers above saved max")
     scan.add_argument("--rescan-existing", action="store_true", help="re-open posts already stored in DB")
     subparsers.add_parser("daemon", help="run scans forever")
     gui = subparsers.add_parser("gui", help="run local browser dashboard")
@@ -66,10 +68,11 @@ def main(argv: list[str] | None = None) -> None:
         print(f"login session saved under: {login_config.user_data_dir}")
         return
     if args.command == "scan":
-        if args.limit_per_board is not None or args.rescan_existing:
+        if args.limit_per_board is not None or args.probe_ahead is not None or args.rescan_existing:
             config = _replace_scan_options(
                 config,
                 limit_per_board=args.limit_per_board,
+                probe_ahead=args.probe_ahead,
                 rescan_existing=args.rescan_existing,
             )
         result = run_once(config, progress=None if args.quiet else _print_progress)
@@ -231,33 +234,7 @@ def _blacklist(config, args) -> None:
 
 
 def _replace_headless(config, headless: bool):
-    return type(config)(
-        cafe_url=config.cafe_url,
-        cafe_grpid=config.cafe_grpid,
-        login_url=config.login_url,
-        data_dir=config.data_dir,
-        user_data_dir=config.user_data_dir,
-        poll_interval_seconds=config.poll_interval_seconds,
-        headless=headless,
-        locale=config.locale,
-        timezone_id=config.timezone_id,
-        user_agent=config.user_agent,
-        allow_mobile_fallback=config.allow_mobile_fallback,
-        browser_executable_path=config.browser_executable_path,
-        scan_strategy=config.scan_strategy,
-        max_pages_per_board=config.max_pages_per_board,
-        max_posts_per_board_page=config.max_posts_per_board_page,
-        direct_scan_min_post_id=config.direct_scan_min_post_id,
-        direct_scan_limit_per_board=config.direct_scan_limit_per_board,
-        rescan_existing_posts=config.rescan_existing_posts,
-        image_timeout_seconds=config.image_timeout_seconds,
-        duplicate_hamming_threshold=config.duplicate_hamming_threshold,
-        blacklist_score_threshold=config.blacklist_score_threshold,
-        boards=config.boards,
-        comment=config.comment,
-        login=config.login,
-        selectors=config.selectors,
-    )
+    return replace(config, headless=headless)
 
 
 def _replace_comment_min_score(config, min_score: int):
@@ -268,64 +245,20 @@ def _replace_comment_min_score(config, min_score: int):
         max_per_run=config.comment.max_per_run,
         template=config.comment.template,
     )
-    return type(config)(
-        cafe_url=config.cafe_url,
-        cafe_grpid=config.cafe_grpid,
-        login_url=config.login_url,
-        data_dir=config.data_dir,
-        user_data_dir=config.user_data_dir,
-        poll_interval_seconds=config.poll_interval_seconds,
-        headless=config.headless,
-        locale=config.locale,
-        timezone_id=config.timezone_id,
-        user_agent=config.user_agent,
-        allow_mobile_fallback=config.allow_mobile_fallback,
-        browser_executable_path=config.browser_executable_path,
-        scan_strategy=config.scan_strategy,
-        max_pages_per_board=config.max_pages_per_board,
-        max_posts_per_board_page=config.max_posts_per_board_page,
-        direct_scan_min_post_id=config.direct_scan_min_post_id,
-        direct_scan_limit_per_board=config.direct_scan_limit_per_board,
-        rescan_existing_posts=config.rescan_existing_posts,
-        image_timeout_seconds=config.image_timeout_seconds,
-        duplicate_hamming_threshold=config.duplicate_hamming_threshold,
-        blacklist_score_threshold=config.blacklist_score_threshold,
-        boards=config.boards,
-        comment=comment,
-        login=config.login,
-        selectors=config.selectors,
-    )
+    return replace(config, comment=comment)
 
 
-def _replace_scan_options(config, limit_per_board: int | None, rescan_existing: bool):
-    return type(config)(
-        cafe_url=config.cafe_url,
-        cafe_grpid=config.cafe_grpid,
-        login_url=config.login_url,
-        data_dir=config.data_dir,
-        user_data_dir=config.user_data_dir,
-        poll_interval_seconds=config.poll_interval_seconds,
-        headless=config.headless,
-        locale=config.locale,
-        timezone_id=config.timezone_id,
-        user_agent=config.user_agent,
-        allow_mobile_fallback=config.allow_mobile_fallback,
-        browser_executable_path=config.browser_executable_path,
-        scan_strategy=config.scan_strategy,
-        max_pages_per_board=config.max_pages_per_board,
-        max_posts_per_board_page=config.max_posts_per_board_page,
-        direct_scan_min_post_id=config.direct_scan_min_post_id,
-        direct_scan_limit_per_board=(
-            config.direct_scan_limit_per_board
-            if limit_per_board is None
-            else max(0, limit_per_board)
-        ),
-        rescan_existing_posts=config.rescan_existing_posts or rescan_existing,
-        image_timeout_seconds=config.image_timeout_seconds,
-        duplicate_hamming_threshold=config.duplicate_hamming_threshold,
-        blacklist_score_threshold=config.blacklist_score_threshold,
-        boards=config.boards,
-        comment=config.comment,
-        login=config.login,
-        selectors=config.selectors,
-    )
+def _replace_scan_options(
+    config,
+    limit_per_board: int | None,
+    probe_ahead: int | None,
+    rescan_existing: bool,
+):
+    changes = {
+        "rescan_existing_posts": config.rescan_existing_posts or rescan_existing,
+    }
+    if limit_per_board is not None:
+        changes["direct_scan_limit_per_board"] = max(0, limit_per_board)
+    if probe_ahead is not None:
+        changes["direct_scan_probe_ahead"] = max(0, probe_ahead)
+    return replace(config, **changes)

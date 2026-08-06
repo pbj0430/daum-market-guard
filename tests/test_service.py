@@ -7,8 +7,11 @@ from daum_market_guard.service import _collect_post_refs, _direct_read_url
 
 
 class FakeDb:
+    def __init__(self, max_number: int = 0) -> None:
+        self.max_number = max_number
+
     def max_post_number(self, board_id: str) -> int:
-        return 0
+        return self.max_number
 
 
 class FakeScraper:
@@ -52,11 +55,33 @@ class ServiceTests(unittest.TestCase):
             "https://cafe.daum.net/_c21_/bbs_read?grpid=1R9cj&fldid=C3Zi&datanum=2061",
         )
 
+    def test_direct_scan_probes_above_saved_max_when_list_is_unavailable(self) -> None:
+        config = AppConfig(
+            cafe_grpid="1R9cj",
+            direct_scan_start_post_ids={"C3Zi": 2061},
+            direct_scan_probe_ahead=3,
+            direct_scan_limit_per_board=5,
+        )
+        board = BoardConfig("Market C3Zi", "https://cafe.daum.net/730418/C3Zi")
+
+        refs = _collect_post_refs(config, FakeDb(max_number=2061), FakeScraper(), board, None)
+
+        self.assertEqual(
+            [ref.post_key for ref in refs],
+            ["C3Zi:2062", "C3Zi:2063", "C3Zi:2064", "C3Zi:2061", "C3Zi:2060"],
+        )
+        self.assertEqual(
+            [ref.cache_missing for ref in refs],
+            [False, False, False, True, True],
+        )
+
     def test_config_loads_direct_scan_start_post_ids(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "config.toml"
             config_path.write_text(
                 """
+direct_scan_probe_ahead = 7
+
 [direct_scan_start_post_ids]
 C3Zi = 2061
 TyYz = 205
@@ -67,6 +92,7 @@ TyYz = 205
             config = load_config(config_path)
 
         self.assertEqual(config.direct_scan_start_post_ids, {"C3Zi": 2061, "TyYz": 205})
+        self.assertEqual(config.direct_scan_probe_ahead, 7)
 
 
 if __name__ == "__main__":

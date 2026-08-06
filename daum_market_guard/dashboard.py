@@ -505,7 +505,7 @@ INDEX_HTML = r"""<!doctype html>
       if (e.event === 'scan_started') return `boards ${p.boards}, strategy ${p.strategy || '-'}, profile ${p.profile}`;
       if (e.event === 'direct_scan_range') {
         const reason = p.reason ? `, reason ${p.reason}` : '';
-        return `${p.board}: latest ${p.latest}, detected ${p.detected_latest || 0}, configured ${p.configured_start || 0}, saved max ${p.saved_max || 0}, stop ${p.stop || '-'}, numbers ${p.count}, limit ${p.limit || 'all'}${reason}`;
+        return `${p.board}: latest ${p.latest}, scan start ${p.scan_start || p.latest}, detected ${p.detected_latest || 0}, configured ${p.configured_start || 0}, saved max ${p.saved_max || 0}, stop ${p.stop || '-'}, numbers ${p.count}, limit ${p.limit || 'all'}, probe ${p.probe_count || 0}/${p.probe_ahead || 0}${reason}`;
       }
       if (e.event === 'board_started') return `${p.board} | ${p.url}`;
       if (e.event === 'board_page_opening') return `page ${p.page}: ${p.url}`;
@@ -514,7 +514,7 @@ INDEX_HTML = r"""<!doctype html>
       if (e.event === 'post_started') return `${p.index}/${p.total} ${p.post_key || '-'} ${p.title} | ${p.url}`;
       if (e.event === 'post_timing') return `${p.post_key || '-'} ${p.phase}: ${p.elapsed_ms}ms ${timingExtra(p)}`;
       if (e.event === 'post_skipped') return `${p.index}/${p.total} ${p.post_key} ${p.title}`;
-      if (e.event === 'post_missing') return `${p.index}/${p.total} ${p.post_key} ${p.error || ''}`;
+      if (e.event === 'post_missing') return `${p.index}/${p.total} ${p.post_key} cached ${p.cached !== false} ${p.error || ''}`;
       if (e.event === 'image_started') return `${p.post_key || '-'} image ${p.index}/${p.total} start`;
       if (e.event === 'image_done') return `${p.post_key || '-'} image ${p.index}/${p.total} ${p.status}: total ${p.total_ms}ms, download ${p.download_ms || '-'}ms, hash ${p.fingerprint_ms || '-'}ms, file ${p.file_save_ms || '-'}ms, db ${p.db_add_ms || '-'}ms`;
       if (e.event === 'post_done') return `${p.post_key || '-'} score ${p.score}, images ${p.stored_images}, elapsed ${p.elapsed_ms || '-'}ms, author ${p.author || '-'}, ${p.title || ''}`;

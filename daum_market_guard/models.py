@@ -15,6 +15,7 @@ class PostRef:
     url: str
     title: str
     post_key: str
+    cache_missing: bool = True
 
 
 @dataclass(frozen=True)

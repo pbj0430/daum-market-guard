@@ -80,7 +80,11 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
                             },
                         )
                         continue
-                    if post_number is not None and db.missing_post_exists(ref.board_id, post_number):
+                    if (
+                        post_number is not None
+                        and ref.cache_missing
+                        and db.missing_post_exists(ref.board_id, post_number)
+                    ):
                         _emit(
                             progress,
                             "post_skipped",
@@ -113,7 +117,8 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
                         _emit_service_timing(progress, ref, "detail", detail_ms)
                     except Exception as exc:
                         if post_number is not None and _looks_missing_error(exc):
-                            db.mark_missing_post(ref.board_id, post_number)
+                            if ref.cache_missing:
+                                db.mark_missing_post(ref.board_id, post_number)
                             _emit(
                                 progress,
                                 "post_missing",
@@ -124,6 +129,7 @@ def run_once(config: AppConfig, progress: ProgressCallback | None = None) -> Run
                                     "post_key": ref.post_key,
                                     "url": ref.url,
                                     "error": str(exc),
+                                    "cached": ref.cache_missing,
                                 },
                             )
                             continue
@@ -234,8 +240,8 @@ def _collect_post_refs(
         else scraper.collect_board_posts(board, progress=progress)
     )
     detected_latest = max((_post_number(ref) or 0 for ref in latest_refs), default=0)
-    latest_number = max(detected_latest, configured_start)
     saved_max = db.max_post_number(board.board_id)
+    latest_number = max(detected_latest, configured_start, saved_max)
     if latest_number <= 0:
         _emit(
             progress,
@@ -252,9 +258,16 @@ def _collect_post_refs(
         )
         return []
 
-    start = latest_number
+    probe_ahead = max(0, config.direct_scan_probe_ahead)
+    probe_numbers = (
+        list(range(saved_max + 1, saved_max + probe_ahead + 1))
+        if detected_latest <= 0 and saved_max > 0 and probe_ahead > 0
+        else []
+    )
     stop = max(1, config.direct_scan_min_post_id)
-    numbers = list(range(start, stop - 1, -1))
+    base_numbers = list(range(latest_number, stop - 1, -1))
+    probe_number_set = set(probe_numbers)
+    numbers = probe_numbers + [number for number in base_numbers if number not in probe_number_set]
     if config.direct_scan_limit_per_board > 0:
         numbers = numbers[: config.direct_scan_limit_per_board]
     _emit(
@@ -269,6 +282,9 @@ def _collect_post_refs(
             "stop": stop,
             "count": len(numbers),
             "limit": config.direct_scan_limit_per_board,
+            "probe_ahead": probe_ahead,
+            "probe_count": len(probe_numbers),
+            "scan_start": numbers[0] if numbers else 0,
         },
     )
     cafe_id = _direct_cafe_id(config, board)
@@ -278,6 +294,7 @@ def _collect_post_refs(
             url=_direct_read_url(config, board, number, cafe_id),
             title=f"{board.board_id} #{number}",
             post_key=f"{board.board_id}:{number}",
+            cache_missing=number not in probe_number_set,
         )
         for number in numbers
     ]
@@ -571,10 +588,13 @@ def _print_progress(event: str, payload: dict[str, Any]) -> None:
         print(
             "[scan] direct range: "
             f"board={payload['board']} latest={payload['latest']} "
+            f"scan_start={payload.get('scan_start', payload['latest'])} "
             f"detected={payload.get('detected_latest', 0)} "
             f"configured={payload.get('configured_start', 0)} "
             f"saved_max={payload.get('saved_max', 0)} stop={payload.get('stop', '-')} "
-            f"numbers={payload['count']} limit={limit_text}",
+            f"numbers={payload['count']} limit={limit_text} "
+            f"probe_ahead={payload.get('probe_ahead', 0)} "
+            f"probe_numbers={payload.get('probe_count', 0)}",
             flush=True,
         )
         if payload.get("reason") == "no_detected_or_configured_start":
@@ -594,7 +614,8 @@ def _print_progress(event: str, payload: dict[str, Any]) -> None:
         if _should_print_skip(payload):
             print(
                 f"[scan] missing {payload['index']}/{payload['total']}: "
-                f"{payload['post_key']} {payload['url']} error={payload.get('error', '')}",
+                f"{payload['post_key']} cached={payload.get('cached', True)} "
+                f"{payload['url']} error={payload.get('error', '')}",
                 flush=True,
             )
     elif event == "image_started":
